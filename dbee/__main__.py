@@ -122,7 +122,7 @@ def main(argv=None) -> int:
         return 0 if case.end in ("closed", "handed") else 1
 
     # watch: sleep until something wakes
-    from .watch import EventWatcher, HealthWatcher, Wake
+    from .watch import EventWatcher, Fold, HealthWatcher, Wake
     q: Queue = Queue()
     plan = [(a.service, a.pattern, a.health)] if (a.service or a.health or not cfg or not cfg.watches) \
         else [(w.service, w.pattern, w.health) for w in cfg.watches]
@@ -145,14 +145,14 @@ def main(argv=None) -> int:
             if said:
                 q.put(Wake("unit_failed", x.service, evidence=f"already down as DBee began to watch it: {said}"))
     print(f"dbee sleeps on {p.name} ({p.platform.name}; watching {service}); mind {m.name}")
-    open_cases: dict[str, float] = {}
+    fold = Fold()
     try:
         while True:
             wk = q.get()
-            if time.time() - open_cases.get(wk.key, 0) < 300:
-                continue                                   # the same wake inside five minutes is the same case
-            open_cases[wk.key] = time.time()
+            if not fold.admit(wk):
+                continue                                   # raised while its case was worked: that case's
             case = doc.treat(wk)
+            fold.ended(wk, time.time())
             print(f"[{case.id}] {case.end}: {case.finding[:300]}")
             print("dbee sleeps again")
     except KeyboardInterrupt:

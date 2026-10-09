@@ -35,6 +35,31 @@ class Wake:
         return f"{self.kind}:{self.what}"
 
 
+def subject(wk: Wake) -> str:
+    """What a wake is about: the service (a line naming one is about it), else the url or the line."""
+    what = wk.what
+    if wk.kind == "line":
+        m = UNIT.search(wk.evidence or wk.what)
+        what = m.group(1) if m else what
+    return what[:-len(".service")] if what.endswith(".service") else what
+
+
+class Fold:
+    """One case per fault. A wake raised before the last case on its subject ended
+    (the storm a failing service sends while it is treated, the restarts its cure
+    causes) belongs to that case; one raised after it ended is the fault coming back
+    and opens a case. Keyed on the case's end, an event, never on a quiet window."""
+
+    def __init__(self):
+        self._ended: dict[str, float] = {}
+
+    def admit(self, wk: Wake) -> bool:
+        return wk.at > self._ended.get(subject(wk), float("-inf"))
+
+    def ended(self, wk: Wake, at: float) -> None:
+        self._ended[subject(wk)] = at
+
+
 FAILED = re.compile(r"(?:Failed to start|entered failed state|Failed with result|Main process exited, code=(?:exited|killed), status=[1-9])")
 UNIT = re.compile(r"\b([\w@.-]+\.service)\b")
 OOM = re.compile(r"(?:Out of memory: Killed process|oom-kill:|OOM killed)")
