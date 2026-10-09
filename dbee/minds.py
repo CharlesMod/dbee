@@ -59,6 +59,60 @@ def _post(url: str, body: dict, headers: dict | None = None, timeout: float = 30
         return json.loads(r.read())
 
 
+# Silence, not length, ends a call: a slow machine reads a long prompt for
+# minutes, and llama-server says how far it is (return_progress) while it does.
+SILENCE_S = 120.0
+
+
+def _post_stream(url: str, body: dict, headers: dict | None = None, silence_s: float | None = None) -> dict:
+    """A chat call streamed, assembled into the reply a plain call returns. The
+    socket timeout is a watchdog for silence: each progress or token chunk
+    resets it. A server that ignores `stream` and answers JSON is read as is."""
+    body = {**body, "stream": True, "stream_options": {"include_usage": True}, "return_progress": True}
+    req = urllib.request.Request(url, data=json.dumps(body).encode(),
+                                 headers={"Content-Type": "application/json", **(headers or {})},
+                                 method="POST")
+    with urllib.request.urlopen(req, timeout=silence_s or SILENCE_S) as r:
+        if "text/event-stream" not in (r.headers.get("Content-Type") or ""):
+            return json.loads(r.read())
+        return _assemble(r)
+
+
+def _assemble(lines) -> dict:
+    """OpenAI stream chunks (`data: {...}` lines) into one chat completion."""
+    text, calls, usage, finish = [], {}, {}, None
+    for raw in lines:
+        line = raw.decode("utf-8", "replace").strip() if isinstance(raw, bytes) else raw.strip()
+        if not line.startswith("data:"):
+            continue
+        data = line[5:].strip()
+        if data == "[DONE]":
+            break
+        try:
+            ch = json.loads(data)
+        except ValueError:
+            continue
+        if ch.get("usage"):
+            usage = ch["usage"]
+        for c in ch.get("choices") or []:
+            d = c.get("delta") or {}
+            if d.get("content"):
+                text.append(d["content"])
+            for tc in d.get("tool_calls") or []:
+                slot = calls.setdefault(tc.get("index", len(calls)), {"id": "", "type": "function",
+                                                                       "function": {"name": "", "arguments": ""}})
+                if tc.get("id"):
+                    slot["id"] = tc["id"]
+                fn = tc.get("function") or {}
+                slot["function"]["name"] += fn.get("name") or ""
+                slot["function"]["arguments"] += fn.get("arguments") or ""
+            finish = c.get("finish_reason") or finish
+    msg = {"role": "assistant", "content": "".join(text)}
+    if calls:
+        msg["tool_calls"] = [calls[k] for k in sorted(calls)]
+    return {"choices": [{"message": msg, "finish_reason": finish}], "usage": usage}
+
+
 def _get(url: str, timeout: float = 30) -> tuple[int, dict]:
     try:
         with urllib.request.urlopen(url, timeout=timeout) as r:
@@ -124,7 +178,7 @@ class OpenAIMind:
         while True:
             t0 = time.time()
             try:
-                out = _post(f"{self.url}/chat/completions", body, headers=headers)
+                out = _post_stream(f"{self.url}/chat/completions", body, headers=headers)
                 return openai_reply(out, time.time() - t0, self.name)
             except (urllib.error.URLError, ConnectionError, TimeoutError, http.client.HTTPException) as e:
                 if isinstance(e, urllib.error.HTTPError) and e.code < 500 and e.code != 429:
@@ -195,7 +249,7 @@ class HiveMind:
         t0 = time.time()
         usage, out = {}, {}
         try:
-            out = _post(f"{url}/v1/chat/completions", body)
+            out = _post_stream(f"{url}/v1/chat/completions", body)
         finally:
             usage = out.get("usage") or {}
             try:

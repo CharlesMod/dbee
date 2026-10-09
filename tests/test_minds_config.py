@@ -106,3 +106,39 @@ def test_dbee_toml_names_a_hive_court(tmp_path):
     p = tmp_path / "dbee.toml"
     p.write_text('[mind]\nspec = "gemma-4-26b-a4b-iq3s"\ncourt = "http://court.example:4410"\n')
     assert config.load(p).court == "http://court.example:4410"
+
+
+class _Slow(BaseHTTPRequestHandler):
+    """A slow machine: it reads the prompt for longer than the silence bound, saying
+    how far it is, then streams a tool call in pieces."""
+    def do_POST(self):
+        import time
+        body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        assert body["stream"] is True
+        self.send_response(200); self.send_header("Content-Type", "text/event-stream"); self.end_headers()
+        def say(d):
+            self.wfile.write(b"data: " + json.dumps(d).encode() + b"\n\n"); self.wfile.flush()
+        for i in range(6):
+            time.sleep(0.2)
+            say({"choices": [], "prompt_progress": {"processed": i, "total": 6}})
+        say({"choices": [{"delta": {"tool_calls": [{"index": 0, "id": "c1", "function": {"name": "look", "arguments": "{\"cmd\": "}}]}}]})
+        say({"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {"arguments": "\"df -h\"}"}}]}, "finish_reason": "tool_calls"}]})
+        say({"choices": [], "usage": {"prompt_tokens": 4607, "completion_tokens": 12}})
+        self.wfile.write(b"data: [DONE]\n\n")
+
+    def log_message(self, *a):
+        pass
+
+
+def test_a_slow_mind_that_keeps_talking_is_not_timed_out(monkeypatch):
+    from dbee import minds
+    monkeypatch.setattr(minds, "SILENCE_S", 0.5)   # the whole answer takes > 1 s; no gap reaches 0.5
+    srv = HTTPServer(("127.0.0.1", 0), _Slow)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        r = OpenAIMind(f"http://127.0.0.1:{srv.server_port}/v1", model="m", wait_s=0).chat(
+            [{"role": "user", "content": "x"}], max_tokens=8)
+    finally:
+        srv.shutdown()
+    assert r.tool_calls == [{"id": "c1", "name": "look", "arguments": {"cmd": "df -h"}}]
+    assert (r.tokens_in, r.tokens_out) == (4607, 12)
