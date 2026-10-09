@@ -213,11 +213,13 @@ class ClaudeMind:
                      seconds=time.time() - t0, mind=self.name, raw=out)
 
 
-def mind(spec: str, *, court: str = "") -> HiveMind | ClaudeMind:
-    """``claude[:model]`` or a hive model name (``gemma-4-26b-a4b``)."""
+def mind(spec: str, *, court: str = "", seat: str = "background", wait_s: float = 120) -> HiveMind | ClaudeMind:
+    """``claude[:model]`` or a hive model name (``gemma-4-26b-a4b``); ``seat`` is
+    the router's call class (a frame keeps some seats for some classes: a 4 GB
+    frame's one slot may answer only ``batch``)."""
     if spec.startswith("claude"):
         _, _, model = spec.partition(":")
         return ClaudeMind(model or "claude-sonnet-5-5")
     if not court:
         raise RuntimeError("a hive mind needs the court's address (--court or DBEE_COURT)")
-    return HiveMind(court, spec)
+    return HiveMind(court, spec, cls=seat, wait_s=wait_s)

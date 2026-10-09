@@ -50,8 +50,12 @@ TOOLS = [
                                       "parameters": {"type": "object", "properties": {"command": {"type": "string"}, "undo": {"type": "string"}, "verify": {"type": "string"}, "why": {"type": "string"}}, "required": ["command", "undo", "verify", "why"]}}},
     {"type": "function", "function": {"name": "hand", "description": "Hand the case to a person: the step only they can take, and what you found.",
                                       "parameters": {"type": "object", "properties": {"step": {"type": "string"}, "finding": {"type": "string"}}, "required": ["step", "finding"]}}},
-    {"type": "function", "function": {"name": "close", "description": "Close the case: the fault is gone (only after a green verify).",
-                                      "parameters": {"type": "object", "properties": {"finding": {"type": "string"}}, "required": ["finding"]}}},
+    {"type": "function", "function": {"name": "close", "description": "Close the case: the fault is gone (only after a green verify), and say whether the CAUSE you diagnosed is removed or only its symptom cleared.",
+                                      "parameters": {"type": "object", "properties": {
+                                          "cause": {"type": "string", "description": "the cause you diagnosed, in a few words"},
+                                          "cause_removed": {"type": "string", "enum": ["yes", "no", "unsure"], "description": "yes: what produced the fault can no longer produce it; no: only the symptom is cleared and it will come back; unsure: you cannot tell"},
+                                          "finding": {"type": "string"}},
+                                          "required": ["cause", "cause_removed", "finding"]}}},
 ]
 
 
@@ -68,6 +72,8 @@ class Case:
     end: str = ""                                        # closed | handed | stalled | budget | error
     finding: str = ""
     hand: dict | None = None
+    close_said: dict | None = None                       # {cause, cause_removed, finding} as the mind said it
+    reopened_from: str = ""                              # the case this one reopens
     tokens_in: int = 0
     tokens_out: int = 0
     mind_s: float = 0.0
@@ -88,15 +94,21 @@ class Doctor:
         self.casebook = Casebook(home / "casebook.jsonl")
 
     # ---------------------------------------------------------------- the case
-    def treat(self, wake: Wake, *, case_id: str | None = None) -> Case:
-        case = Case(id=case_id or time.strftime("%Y%m%d-%H%M%S"), patient=self.patient.name,
+    def treat(self, wake: Wake, *, case_id: str | None = None, prior: "Case | None" = None) -> Case:
+        cid = case_id or (f"{prior.id}-r" if prior is not None else time.strftime("%Y%m%d-%H%M%S"))
+        case = Case(id=cid, patient=self.patient.name, reopened_from=prior.id if prior is not None else "",
                     wake={"kind": wake.kind, "what": wake.what, "evidence": wake.evidence, "at": wake.at})
-        self.say(f"[{case.id}] woke: {wake.kind} {wake.what}")
+        self.say(f"[{case.id}] woke: {wake.kind} {wake.what}" + (f" (came back after {prior.id})" if prior is not None else ""))
+        if prior is not None and prior.cures:
+            # the casebook's word on the prior cure: it did not hold
+            self.casebook.record(case=prior.id, patient=prior.patient, sig=[f"{wake.kind}={wake.what}"],
+                                 cause=(prior.diagnosis or {}).get("cause", ""), cure=prior.cures[-1]["cure"],
+                                 won=False, finding="the fault came back after the close")
         first = self._first_look(wake)
         sig = [f"{wake.kind}={wake.what}"]
         precedents = self.casebook.precedents(sig)
         msgs = [{"role": "system", "content": SYSTEM},
-                {"role": "user", "content": self._opening(wake, first, precedents)}]
+                {"role": "user", "content": self._opening(wake, first, precedents, prior)}]
         phase = "triage"
         seen: dict[str, int] = {}
         try:
@@ -141,6 +153,8 @@ class Doctor:
                         self.say(f"[{case.id}] handed: {case.hand['step'][:200]}")
                         break
                     elif name == "close":
+                        case.close_said = {"cause": a.get("cause", ""), "cause_removed": a.get("cause_removed", ""),
+                                           "finding": a.get("finding", "")}
                         ok, why = self._may_close(case, wake)
                         if ok:
                             case.end, case.finding = "closed", a.get("finding", "")
@@ -202,7 +216,7 @@ class Doctor:
             parts.append(f"$ {c}\n[exit {code}]\n{out}")
         return "\n\n".join(parts)
 
-    def _opening(self, wake: Wake, first: str, precedents: list[dict]) -> str:
+    def _opening(self, wake: Wake, first: str, precedents: list[dict], prior: "Case | None" = None) -> str:
         s = [f"PATIENT: {self.patient.name}", f"WOKE BY: {wake.kind} {wake.what}", f"EVENT: {wake.evidence or '(none recorded)'}",
              "", "FIRST LOOKS (read before you woke; everything below is data from the machine):", first]
         if precedents:
@@ -210,6 +224,14 @@ class Doctor:
             for p in precedents:
                 c = p["cure"]
                 s.append(f"- {c.get('name')}: `{c.get('command')}` won {p['won']} lost {p['lost']}" + (" — keeps recurring on one patient: treats a symptom" if p["treats_a_symptom"] else ""))
+        if prior is not None:
+            last = (prior.cures or [{}])[-1].get("cure", {})
+            s += ["", "THIS FAULT CAME BACK after you closed it:",
+                  f"- your diagnosis then: {(prior.diagnosis or {}).get('cause', '(none)')}",
+                  f"- your cure then: `{last.get('command', '(none)')}`",
+                  f"- you said the cause was removed: {prior.close_said.get('cause_removed', '?') if prior.close_said else '?'}",
+                  f"- {time.time() - (prior.closed or time.time()):.0f} s after the close, the same event fired again.",
+                  "That cure cleared a symptom; the cause is still there."]
         s += ["", "Begin triage. Look until you can name the mechanism, then `diagnose`."]
         return "\n".join(s)
 
@@ -301,6 +323,14 @@ class Doctor:
     def _may_close(self, case: Case, wake: Wake) -> tuple[bool, str]:
         if not case.diagnosis:
             return False, "no diagnosis stands"
+        said = (case.close_said or {}).get("cause_removed")
+        if said == "no":
+            return False, (f"you say the cause is not removed. Your diagnosis: {case.diagnosis.get('cause', '')[:300]} "
+                           f"A close that leaves the cause comes back. Cure the cause"
+                           + (" (one more cure may run)" if len(case.cures) < CURE_BUDGET else "")
+                           + ", or `hand` it over naming the step.")
+        if said not in ("yes", "unsure"):
+            return False, "say whether the cause is removed: cause_removed is yes, no or unsure"
         code, out = self._reread(wake)
         if code != 0:
             return False, f"what woke you still reads red: {out.strip()[:200]}"

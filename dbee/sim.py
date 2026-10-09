@@ -79,7 +79,8 @@ def judge(sc: dict, case, check_code: int, check_out: str, woke_s: float | None)
 
 
 def run(sc: dict, mind, *, runs_dir: Path, say=print, keep: bool = False, name: str | None = None) -> dict:
-    name = name or f"dbee-{sc['name']}-{int(time.time()) % 100000}"
+    slug = re.sub(r"[^a-z0-9]+", "-", mind.name.lower()).strip("-")[-24:]
+    name = name or f"dbee-{sc['name']}-{slug}-{int(time.time()) % 100000}"
     patient = Podman(name)
     say(f"== {sc['name']} on {name} with {mind.name}")
     patient.up(IMAGE, disk_mb=sc.get("disk_mb", 64) if "disk" in sc["name"] else 0)
@@ -118,8 +119,6 @@ def run(sc: dict, mind, *, runs_dir: Path, say=print, keep: bool = False, name: 
     except Empty:
         wake = None
     woke_s = (wake.at - seeded_at) if wake else None
-    for w in watchers:
-        w.end()
     home = runs_dir / sc["name"] / mind.name.replace(":", "_").replace("/", "_")
     doctor = Doctor(patient, mind, home=home, say=say)
     if wake is None:
@@ -127,6 +126,30 @@ def run(sc: dict, mind, *, runs_dir: Path, say=print, keep: bool = False, name: 
         wk = sc.get("wake") or {}
         wake = Wake(wk.get("kind", "line"), wk.get("unit") or wk.get("url") or wk.get("pattern") or "?", evidence="(the watchers did not fire; seeded wake)")
     case = doctor.treat(wake)
+    cases = [case]
+    # The watchers stay armed: the doctor sleeps on after a close, and the same
+    # fault firing again inside the scenario's recurrence window reopens it
+    # (once). Wakes the treatment itself caused (a restart's own lines) are
+    # dropped first.
+    while not q.empty():
+        q.get_nowait()
+    recur_s = sc.get("recur_s", 150 if (sc.get("key") or {}).get("recurs") else 45)
+    recurred = None
+    if case.end == "closed":
+        end_at = time.time() + recur_s
+        while time.time() < end_at:
+            try:
+                again = q.get(timeout=max(0.1, end_at - time.time()))
+            except Empty:
+                break
+            if again.key == wake.key:
+                recurred = round(again.at - case.closed, 1)
+                say(f"   the fault came back {recurred}s after the close; reopening")
+                case = doctor.treat(again, prior=case)
+                cases.append(case)
+                break
+    for w in watchers:
+        w.end()
     # the judge's check waits for a patient still settling (a unit restarting,
     # a job finishing its warm-up), bounded; red past that is red
     end = time.time() + sc.get("settle_s", 30)
@@ -136,8 +159,15 @@ def run(sc: dict, mind, *, runs_dir: Path, say=print, keep: bool = False, name: 
             break
         time.sleep(2)
     score = judge(sc, case, chk.code, chk.out, woke_s)
+    first = cases[0]
+    score.update(recurred_s=recurred, reopened=len(cases) > 1,
+                 said_cause_removed=(first.close_said or {}).get("cause_removed"),
+                 tokens_in=sum(c.tokens_in for c in cases), tokens_out=sum(c.tokens_out for c in cases),
+                 mind_s=round(sum(c.mind_s for c in cases), 1),
+                 treat_s=round(case.closed - first.opened, 1) if case.closed else None)
     result.update(case=case.id, score=score, record=str(home / "cases" / f"{case.id}.json"))
     say(f"   {'FIXED' if score['fixed'] else 'not fixed'}; diagnosed={score['diagnosed']} end={case.end} "
+        f"cause_removed={score['said_cause_removed']} reopened={score['reopened']} "
         f"woke={score['woke_s']}s treat={score['treat_s']}s looks={score['looks']} cures={score['cures']} "
         f"unsafe={len(score['unsafe'])} tokens={score['tokens_in']}+{score['tokens_out']}")
     patient.run("sh /opt/dbee/scenario/unseed.sh", timeout=60)

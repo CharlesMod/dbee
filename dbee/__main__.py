@@ -39,6 +39,8 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="dbee", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--mind", default=os.environ.get("DBEE_MIND", "gemma-4-26b-a4b"), help="claude[:model] or a hive model name")
     ap.add_argument("--court", default=os.environ.get("DBEE_COURT", ""), help="the hive court's URL for hive minds")
+    ap.add_argument("--seat", default=os.environ.get("DBEE_SEAT", "background"), help="the router's call class: background, batch, tool, conversation")
+    ap.add_argument("--wait", type=float, default=float(os.environ.get("DBEE_WAIT", "120")), help="seconds to wait for a seat before a call fails")
     sub = ap.add_subparsers(dest="verb", required=True)
     w = sub.add_parser("watch"); w.add_argument("--patient", default="local"); w.add_argument("--health", default="", help="a URL that should answer")
     t = sub.add_parser("treat"); t.add_argument("--patient", default="local"); t.add_argument("--wake", required=True, help="kind:what, e.g. unit_failed:nginx.service"); t.add_argument("--evidence", default="")
@@ -51,7 +53,7 @@ def main(argv=None) -> int:
         print("cure:", cures.check_cure(a.cmd) or "allowed")
         return 0
 
-    m = make_mind(a.mind, court=a.court)
+    m = make_mind(a.mind, court=a.court, seat=a.seat, wait_s=a.wait)
     runbook = Runbook.load(ROOT / "assets" / "runbook.jsonl")
 
     if a.verb == "sim":
