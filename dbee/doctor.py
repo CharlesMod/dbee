@@ -93,6 +93,9 @@ class Doctor:
         self.patient, self.mind, self.home, self.say = patient, mind, home, say
         # a reply's budget; a mind that thinks before it answers needs room for both
         self.max_tokens = max_tokens or int(os.environ.get("DBEE_MAX_TOKENS", "700"))
+        # reasoning effort per phase, for minds that think (DBEE_EFFORT="triage=low,treat=medium");
+        # empty leaves the engine's own default
+        self.effort = dict(kv.split("=", 1) for kv in os.environ.get("DBEE_EFFORT", "").split(",") if "=" in kv)
         self.runbook = runbook or Runbook()
         self.casebook = Casebook(home / "casebook.jsonl")
 
@@ -137,6 +140,10 @@ class Doctor:
                             case.end, case.finding = "stalled", "the same look three times: thinking went round"
                             break
                     elif name == "diagnose":
+                        if phase == "triage" and self.effort.get("diagnose") and self.effort.get("diagnose") != self.effort.get("triage"):
+                            # the diagnosis is made at the diagnose effort: the light turn's draft is
+                            # put back to the mind once, thinking at that effort, to confirm or revise
+                            a = self._diagnose_again(case, msgs, tc, a) or a
                         case.diagnosis = {"cause": a.get("cause", ""), "evidence": a.get("evidence", ""),
                                          "confidence": a.get("confidence"), "at": time.time()}
                         self.say(f"[{case.id}] diagnosis: {case.diagnosis['cause'][:200]}")
@@ -185,12 +192,36 @@ class Doctor:
     # ------------------------------------------------------------- the pieces
     def _ask(self, case: Case, msgs, phase):
         tools = TOOLS if phase == "treat" else [t for t in TOOLS if t["function"]["name"] in ("look", "diagnose", "hand")]
-        r = self.mind.chat(msgs, tools=tools, max_tokens=self.max_tokens)
+        effort = self.effort.get(phase, "")
+        r = self.mind.chat(msgs, tools=tools, max_tokens=self.max_tokens, effort=effort)
         case.turns += 1
+        calls = ",".join(tc["name"] for tc in r.tool_calls) or "words"
+        self.say(f"[{case.id}] turn {case.turns} ({phase}{', ' + effort if effort else ''}): {calls} "
+                 f"in {r.seconds:.1f}s, {r.tokens_in}+{r.tokens_out} tokens")
         case.tokens_in += r.tokens_in
         case.tokens_out += r.tokens_out
         case.mind_s += r.seconds
         return r
+
+    def _diagnose_again(self, case: Case, msgs: list, tc: dict, draft: dict) -> dict | None:
+        """One turn at the diagnose effort over the same evidence, the draft shown.
+        Returns its diagnose arguments, or None to keep the draft."""
+        probe = msgs + [{"role": "tool", "tool_call_id": tc.get("id", ""), "name": "diagnose",
+                         "content": "Draft recorded, not final: "
+                                    f"cause: {draft.get('cause', '')} | evidence: {draft.get('evidence', '')}. "
+                                    "Check it against what you read, then call `diagnose` again with the final cause and its evidence line."}]
+        tools = [t for t in TOOLS if t["function"]["name"] == "diagnose"]
+        r = self.mind.chat(probe, tools=tools, max_tokens=self.max_tokens, effort=self.effort["diagnose"])
+        case.turns += 1
+        case.tokens_in += r.tokens_in
+        case.tokens_out += r.tokens_out
+        case.mind_s += r.seconds
+        self.say(f"[{case.id}] turn {case.turns} (diagnose, {self.effort['diagnose']}): "
+                 f"{','.join(t['name'] for t in r.tool_calls) or 'words'} in {r.seconds:.1f}s")
+        for t in r.tool_calls:
+            if t["name"] == "diagnose" and (t["arguments"] or {}).get("cause"):
+                return t["arguments"]
+        return None
 
     @staticmethod
     def _assistant(reply) -> dict:

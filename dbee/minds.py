@@ -79,6 +79,7 @@ class HiveMind:
         self.cls = cls
         self.wait_s = wait_s
         self.name = f"hive:{model}"
+        self.say = print
 
     def _grant(self, tokens: int) -> dict:
         """Ask until a seat is granted or ``wait_s`` has passed. The court holds a
@@ -96,18 +97,21 @@ class HiveMind:
             last = body
             if time.time() > deadline:
                 break
+            if self.say and time.time() - getattr(self, "_said", 0) > 30:
+                self._said = time.time()
+                self.say(f"   waiting for a seat on {self.model}: {(body.get('detail') or body.get('why') or '')[:120]}")
             time.sleep(min(5.0, float(body.get("retry_after_s") or body.get("retry_s") or 2)))
         raise RuntimeError(f"no seat for {self.model} in {self.wait_s:.0f}s: {last.get('detail') or last.get('why') or last}")
 
     def chat(self, messages: list[dict], tools: list[dict] | None = None,
-             *, max_tokens: int = 1024, temperature: float = 0.0) -> Reply:
+             *, max_tokens: int = 1024, temperature: float = 0.0, effort: str = "") -> Reply:
         """One call; an engine that drops mid-call (a restart, a reload) is
         backed off from and asked for again through the router, until wait_s."""
         deadline = time.time() + self.wait_s
         delay = 2.0
         while True:
             try:
-                return self._chat_once(messages, tools, max_tokens=max_tokens, temperature=temperature)
+                return self._chat_once(messages, tools, max_tokens=max_tokens, temperature=temperature, effort=effort)
             except (urllib.error.URLError, ConnectionError, TimeoutError, http.client.HTTPException) as e:
                 if isinstance(e, urllib.error.HTTPError) and e.code < 500:
                     raise
@@ -116,12 +120,16 @@ class HiveMind:
                 time.sleep(delay)
                 delay = min(delay * 2, 30.0)
 
-    def _chat_once(self, messages, tools, *, max_tokens, temperature) -> Reply:
+    def _chat_once(self, messages, tools, *, max_tokens, temperature, effort="") -> Reply:
         est = sum(len(json.dumps(m)) for m in messages) // 3 + max_tokens
         grant = self._grant(est)
         url = grant["url"].rstrip("/")
+        # n_predict beside max_tokens: the engine's own cap, which a pin's default
+        # otherwise overrides (seen: 12000 on a call that asked 4096)
         body = {"model": self.model, "messages": messages, "max_tokens": max_tokens,
-                "temperature": temperature}
+                "n_predict": max_tokens, "temperature": temperature}
+        if effort:
+            body["chat_template_kwargs"] = {"reasoning_effort": effort}
         if tools:
             body["tools"] = tools
         t0 = time.time()
@@ -205,7 +213,7 @@ class ClaudeMind:
         return "\n\n".join(system), out
 
     def chat(self, messages: list[dict], tools: list[dict] | None = None,
-             *, max_tokens: int = 1024, temperature: float = 0.0) -> Reply:
+             *, max_tokens: int = 1024, temperature: float = 0.0, effort: str = "") -> Reply:
         system, msgs = self._messages(messages)
         body = {"model": self.model, "max_tokens": max_tokens, "messages": msgs,
                 "temperature": temperature}
