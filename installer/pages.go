@@ -128,7 +128,7 @@ func (s *Setup) mindData(c wizard.Context) (any, error) {
 	}
 	return map[string]any{
 		"cards":  cards,
-		"hive":   map[string]any{"available": s.Hive.Court != "", "court": s.Hive.Court, "model": HiveModelName},
+		"hive":   s.hiveCard(),
 		"claude": map[string]any{"saved": HasSecret(s.Home, "ANTHROPIC_API_KEY") || s.hasKey()},
 	}, nil
 }
@@ -257,4 +257,12 @@ func (s *Setup) doneData(c wizard.Context) (any, error) {
 			{"Uninstall", "run dbee-setup --uninstall"},
 		},
 	}, nil
+}
+
+func (s *Setup) hiveCard() map[string]any {
+	model := ""
+	if s.Hive.Court != "" {
+		model = s.hiveModel(s.Hive.Court)
+	}
+	return map[string]any{"available": s.Hive.Court != "", "court": s.Hive.Court, "model": model}
 }

@@ -5,6 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -12,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/CharlesMod/wasp/catalog"
 	"github.com/CharlesMod/wasp/wizard"
 )
 
@@ -382,5 +386,41 @@ func TestAnEngineThatCannotStartHereStopsTheInstallNamingWhatItLacks(t *testing.
 	}
 	if _, err := install(t, b.setup(cpuOnly8GB, nil), localAnswers()); err != nil {
 		t.Fatalf("once the library is there, a retry resumes: %v", err)
+	}
+}
+
+func TestTheHivesMindIsAModelItsCourtServes(t *testing.T) {
+	court := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/route/demand" {
+			http.NotFound(w, r)
+			return
+		}
+		io.WriteString(w, `{"demand":{},"seats":{"qwen3.5-4b-iq4xs":3,"gemma-4-26b-a4b-iq3s":10,"some-other-model":40}}`)
+	}))
+	defer court.Close()
+	b := newBox(t)
+	s := b.setup(cpuOnly8GB, func(s *Setup) { s.Hive = Hive{Here: true, Court: court.URL} })
+	full, err := catalog.Parse(catalogJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	box := s.Catalog
+	s.Catalog = full
+	if got := s.hiveModel(court.URL); got != "gemma-4-26b-a4b-iq3s" {
+		t.Fatalf("the best-ranked model the Hive serves: got %q", got)
+	}
+	s.Catalog = box
+	if _, err := install(t, s, wizard.Answers{"mind_kind": "hive", "whole_machine": true}); err != nil {
+		t.Fatal(err)
+	}
+	if toml := readFile(t, filepath.Join(b.root, "dbee.toml")); !strings.Contains(toml, `spec = "some-other-model"`) {
+		t.Fatalf("toml:\n%s", toml)
+	}
+	s.Catalog.Models = nil
+	if got := s.hiveModel(court.URL); got != "some-other-model" {
+		t.Fatalf("with nothing of the catalog served, the most seats: got %q", got)
+	}
+	if got := s.hiveModel("http://127.0.0.1:1"); got != HiveModelName {
+		t.Fatalf("a court that cannot say: got %q", got)
 	}
 }

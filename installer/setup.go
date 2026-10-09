@@ -42,8 +42,8 @@ const (
 
 const (
 	ClaudeModel   = "claude-sonnet-5-5"
-	HiveModelName = "gemma-4-26b-a4b"
-	maxServeCtx   = 32768 // tokens per slot DBee asks the server for, at most
+	HiveModelName = "gemma-4-26b-a4b-iq3s" // the Hive's name for it, when its court cannot say what it serves
+	maxServeCtx   = 32768                  // tokens per slot DBee asks the server for, at most
 )
 
 // thinking models get a per-phase effort in dbee.toml.
@@ -227,12 +227,12 @@ func (s *Setup) choose(a wizard.Answers) (choice, error) {
 		if c.URL == "" {
 			c.URL = s.Hive.Court
 		}
-		c.Model = strings.TrimSpace(a.String("hive_model"))
-		if c.Model == "" {
-			c.Model = HiveModelName
-		}
 		if c.URL == "" {
 			return c, errors.New("Give the Hive's court address.")
+		}
+		c.Model = strings.TrimSpace(a.String("hive_model"))
+		if c.Model == "" {
+			c.Model = s.hiveModel(c.URL)
 		}
 	case "":
 		return c, ErrNoMind
@@ -347,3 +347,43 @@ func (s *Setup) plural(n int, one, many string) string {
 }
 
 func exists(p string) bool { _, err := os.Stat(p); return err == nil }
+
+// hiveModel is the mind DBee asks a Hive's router for: of the models the court
+// says it has seats for (GET /v1/route/demand), the best ranked in DBee's
+// catalog, else the one with the most seats; HiveModelName when the court
+// cannot say. A name the router does not serve would wait for a seat forever.
+func (s *Setup) hiveModel(court string) string {
+	cl := http.Client{Timeout: 5 * time.Second}
+	if s.HTTP != nil {
+		cl.Transport = s.HTTP.Transport
+	}
+	resp, err := cl.Get(strings.TrimRight(court, "/") + "/v1/route/demand")
+	if err != nil {
+		return HiveModelName
+	}
+	defer resp.Body.Close()
+	var d struct {
+		Seats map[string]int `json:"seats"`
+	}
+	if resp.StatusCode != http.StatusOK || json.NewDecoder(resp.Body).Decode(&d) != nil {
+		return HiveModelName
+	}
+	best, rank, seats := "", -1, -1
+	for _, e := range s.Catalog.Models {
+		if d.Seats[e.Name] > 0 && e.Rank > rank {
+			best, rank = e.Name, e.Rank
+		}
+	}
+	if best != "" {
+		return best
+	}
+	for name, n := range d.Seats {
+		if n > seats || n == seats && name < best {
+			best, seats = name, n
+		}
+	}
+	if best == "" || seats <= 0 {
+		return HiveModelName
+	}
+	return best
+}
