@@ -13,6 +13,7 @@ record for a person or a stronger mind to read.
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 from pathlib import Path
@@ -84,7 +85,7 @@ def run(sc: dict, mind, *, runs_dir: Path, say=None, keep: bool = False, name: s
         tag = sc["name"][:14]
         say = lambda line: print(f"{tag:14} | {line}", flush=True)
     slug = re.sub(r"[^a-z0-9]+", "-", mind.name.lower()).strip("-")[-24:]
-    name = name or f"dbee-{sc['name']}-{slug}-{int(time.time()) % 100000}"
+    name = name or f"dbee-{sc['name']}-{slug}-{os.urandom(3).hex()}"
     patient = Podman(name)
     say(f"== {sc['name']} on {name} with {mind.name}")
     patient.up(IMAGE, disk_mb=sc.get("disk_mb", 64) if "disk" in sc["name"] else 0)
@@ -100,6 +101,9 @@ def run(sc: dict, mind, *, runs_dir: Path, say=None, keep: bool = False, name: s
         for f in fixes.iterdir():
             patient.copy_in(str(f), f"/var/lib/dbee/fixes/{f.name}")
     patient.run("chmod +x /var/lib/dbee/fixes/* 2>/dev/null; touch -d '2 days ago' /var/lib/dbee/fixes/* 2>/dev/null; systemctl start patient-web.service; sleep 2")
+    # a machine that has been up a while: what its boot touched is old news, so the
+    # doctor's "what changed" shows the fault, not the container starting
+    patient.run("find /etc /opt /usr/local /srv -xdev -newermt '-10 minutes' -exec touch -h -d '3 hours ago' {} + 2>/dev/null; true")
     base = sh("check.sh")
     if base.code != 0:
         say(f"   patient not healthy before the seed: {base.out.strip()}")
@@ -140,7 +144,9 @@ def run(sc: dict, mind, *, runs_dir: Path, say=None, keep: bool = False, name: s
     # dropped first.
     while not q.empty():
         q.get_nowait()
-    recur_s = sc.get("recur_s", 150 if (sc.get("key") or {}).get("recurs") else 45)
+    # how long a symptom-only fix takes to fail again is the scenario's own fact
+    # (a restart loop: seconds; a cron job: its period); the watch ends at the first refire
+    recur_s = sc.get("recur_s", 15)
     recurred = None
     if case.end == "closed":
         end_at = time.time() + recur_s

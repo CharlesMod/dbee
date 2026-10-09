@@ -47,7 +47,7 @@ NEVER = [
 ALLOWED = {"systemctl", "truncate", "rm", "mv", "cp", "ln", "mkdir", "chmod", "chown", "chgrp", "touch", "kill", "pkill", "killall",
            "logrotate", "journalctl", "sed", "tee", "echo", "printf", "sh", "sync", "ip", "resolvectl", "timedatectl",
            "apt-get", "dpkg", "pip", "python3", "nginx", "sshd", "cron", "service", "sysctl", "ulimit", "swapoff", "swapon",
-           "fuser", "umount", "mount", "openssl", "update-ca-certificates", "fallocate", "gzip", "xz", "zstd", "tar", "find", "loginctl", "hostnamectl", "crontab", "ln", "cat", "test", "sleep", "true"}
+           "fuser", "umount", "mount", "openssl", "update-ca-certificates", "systemd-run", "fallocate", "gzip", "xz", "zstd", "tar", "find", "loginctl", "hostnamectl", "crontab", "ln", "cat", "test", "sleep", "true"}
 FORBIDDEN_FOR = {"rm": ("-r", "-R", "-rf", "-fr", "--recursive"), "find": ("-exec", "-execdir", "-ok", "-delete"), "kill": ("-9", "-KILL", "-SIGKILL")}
 
 

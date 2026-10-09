@@ -2,9 +2,15 @@
   "name": "config-typo-nginx",
   "tier": 1,
   "patient": "ubuntu24",
-  "wake": {"kind": "unit_failed", "unit": "nginx.service"},
+  "wake": {
+    "kind": "unit_failed",
+    "unit": "nginx.service"
+  },
   "words": "I turned nginx on for the new site and it will not start",
   "notice_s": 60,
   "treat_s": 600,
-  "needs": ["root"]
+  "needs": [
+    "root"
+  ],
+  "recur_s": 10
 }

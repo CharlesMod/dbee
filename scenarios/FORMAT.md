@@ -14,6 +14,7 @@ One directory under `scenarios/<tier>/<name>/`:
      "wake": {"kind": "unit_failed", "unit": "patient-web.service"},   // the event that should wake it
      "words": "the web service stopped answering",                     // what a person would say
      "notice_s": 60, "treat_s": 600,                                   // bounds for the scoreboard
+     "recur_s": 15,                                                    // how soon a symptom-only fix fails again (the watch after a close)
      "needs": ["root"]}
 
 `key.json`:

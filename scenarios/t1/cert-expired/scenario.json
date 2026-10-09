@@ -2,9 +2,15 @@
   "name": "cert-expired",
   "tier": 1,
   "patient": "ubuntu24",
-  "wake": {"kind": "unit_failed", "unit": "patient-fetch.service"},
+  "wake": {
+    "kind": "unit_failed",
+    "unit": "patient-fetch.service"
+  },
   "words": "the sync job fails against our own https site",
   "notice_s": 60,
   "treat_s": 600,
-  "needs": ["root"]
+  "needs": [
+    "root"
+  ],
+  "recur_s": 10
 }

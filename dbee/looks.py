@@ -31,7 +31,7 @@ FAMILIES: dict[str, tuple[str, ...]] = {
     "ulimit": (), "lscpu": (), "vmstat": (), "iostat": (), "top": ("-d",), "numfmt": (), "sort": (), "uniq": (), "cut": (), "awk": (), "sed": ("-i", "--in-place", "w", "e"),
     "test": (), "true": (), "echo": (), "printf": (), "stat": (), "md5sum": (), "sha256sum": (), "openssl": ("req", "genrsa", "genpkey", "rand", "-out", "-keyout", "ca", "enc", "dgst", "-sign"),
     "timedatectl": ("set-time", "set-timezone", "set-ntp", "set-local-rtc"), "hostnamectl": ("set-hostname", "set-icon-name", "set-chassis"),
-    "nslookup": (), "dig": (), "host": (), "netstat": (), "resolvectl": ("flush-caches", "reset-statistics", "revert", "dns", "domain"),
+    "nslookup": (), "dig": (), "host": (), "netstat": (), "cmp": (), "diff": ("-o", "--output"), "strings": (), "od": (), "xxd": ("-r",), "hexdump": (), "cksum": (), "sha1sum": (), "base64": (), "[": (), "whoami": (), "groups": (), "w": (), "who": (), "getfacl": (), "lsattr": (), "namei": (), "dpkg-query": (), "apt-cache": (), "systemd-analyze": (), "less": (), "column": (), "tr": (), "jq": (), "resolvectl": ("flush-caches", "reset-statistics", "revert", "dns", "domain"),
 }
 FILTERS = {"grep", "tail", "head", "wc", "sort", "uniq", "cut", "awk", "sed", "tr", "jq", "numfmt", "column"}
 SECRET = re.compile(r"(?i)(api[_-]?key|token|password|(?<![/\w])passwd(?!\b/)|secret|authkey|private[_-]?key|\.ssh/|id_(rsa|ed25519|ecdsa|dsa)\b|/etc/shadow|\.pem\b|\.key\b|tailscaled\.state|\.gnupg/|\.netrc|credentials)")
@@ -58,8 +58,15 @@ def segments(cmd: str) -> list[tuple[str, list[str]]]:
     return [(o, t) for o, t in out if t or o]
 
 
+REDIRS = {">", ">>", "<", "<<", ">&", "<&", "&>", "|&", "&", "(", ")"}
+JOINS = {"", "|", "&&", "||", ";"}
+
+
 def check(cmd: str) -> str:
-    """Why this look may not run, or '' when it may."""
+    """Why this look may not run, or '' when it may. A look is judged by its effect:
+    any chain of commands (`|`, `&&`, `||`, `;`) is allowed when every command in it
+    only reads. Redirection and background are refused, except the harmless kinds
+    (merging or discarding output, no input)."""
     if not cmd.strip():
         return "empty"
     if "$(" in cmd or "`" in cmd:
@@ -69,42 +76,40 @@ def check(cmd: str) -> str:
         segs = segments(cmd)
     except ValueError as e:
         return f"unparseable: {e}"
-    if any(op not in ("", "|") for op, _ in segs):
-        return "a look is one command and its filters: no redirection, `;`, `&&`, `||` or `&`"
-    if len(segs) > 4:
-        return "at most three filters after the command"
-    head = segs[0][1]
-    parts = [None] + [t for _, t in segs[1:]]
-    if not head:
-        return "empty"
-    fam = head[0].rsplit("/", 1)[-1]
-    if fam == "sudo":
-        return "the doctor already runs as the patient's root; no sudo"
-    if fam not in FAMILIES:
-        return f"`{fam}` is not a read-only family a look may start with"
-    args = head[1:]
-    for bad in FAMILIES[fam]:
-        for i, t in enumerate(args):
-            if t != bad:
-                continue
-            if bad in ("-o", "--output") and i + 1 < len(args) and args[i + 1] == "/dev/null":
-                continue                    # output thrown away writes nothing
-            return f"`{fam} {bad}` writes; a look only reads"
-    if fam in ("awk", "sed") and any(t for t in head[1:] if "system(" in t or ">" in t):
-        return "no shell-outs or writes inside awk/sed"
-    for fh in parts[1:]:
-        if fh and fh[0] == "openssl":       # reading a certificate or key from the pipe
-            bad = next((b for b in FAMILIES["openssl"] if b in fh[1:]), None)
-            if bad:
-                return f"`openssl {bad}` writes; a look only reads"
+    for op, _ in segs:
+        if op in REDIRS:
+            return f"redirection or background (`{op}`) writes or detaches; a look only reads"
+        if op not in JOINS:
+            return f"`{op}` is not a way to join commands in a look"
+    if len(segs) > 8:
+        return "a look is at most eight commands"
+    for op, toks in segs:
+        if not toks:
+            return "an empty command in the chain"
+        verb = toks[0].rsplit("/", 1)[-1]
+        if verb == "sudo":
+            return "the doctor already runs as the patient's root; no sudo"
+        if op == "|" and verb in FILTERS:
+            if verb == "sed" and any(x in toks[1:] for x in ("-i", "--in-place")):
+                return "sed -i writes"
+            if verb in ("awk", "sed") and any("system(" in t or ">" in t for t in toks[1:]):
+                return "no shell-outs or writes inside awk/sed"
             continue
-        if not fh or fh[0] not in FILTERS:
-            return f"`{(fh or ['?'])[0]}` is not a filter a look may use (grep, tail, head, wc, sort, uniq, cut, awk, sed, tr, jq)"
-        if fh[0] == "sed" and any(x in fh[1:] for x in ("-i", "--in-place")):
-            return "sed -i writes"
-    for t in head[1:]:
-        if SECRET.search(t) and fam in ("cat", "grep", "head", "tail", "find", "ls", "stat"):
-            return "a look does not read a secret's file by name"
+        if verb not in FAMILIES:
+            return f"`{verb}` is not on the doctor's read-only list; read it another way"
+        args = toks[1:]
+        for bad in FAMILIES[verb]:
+            for i, t in enumerate(args):
+                if t != bad:
+                    continue
+                if bad in ("-o", "--output") and i + 1 < len(args) and args[i + 1] == "/dev/null":
+                    continue                    # output thrown away writes nothing
+                return f"`{verb} {bad}` writes; a look only reads"
+        if verb in ("awk", "sed") and any("system(" in t or ">" in t for t in args):
+            return "no shell-outs or writes inside awk/sed"
+        if verb in ("cat", "grep", "head", "tail", "find", "ls", "stat", "less", "strings", "od", "xxd", "hexdump", "base64"):
+            if any(SECRET.search(t) for t in args):
+                return "a look does not read a secret's file by name"
     return ""
 
 

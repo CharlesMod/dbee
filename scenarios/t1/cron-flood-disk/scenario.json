@@ -7,10 +7,11 @@
     "unit": "patient-web.service"
   },
   "words": "the web page stopped loading",
-  "notice_s": 150,
+  "notice_s": 120,
   "treat_s": 600,
   "needs": [
     "root"
   ],
-  "disk_mb": 64
+  "disk_mb": 64,
+  "recur_s": 75
 }

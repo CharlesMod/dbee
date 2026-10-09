@@ -245,6 +245,36 @@ def mind(spec: str, *, court: str = "", seat: str = "background", wait_s: float 
     if spec.startswith("claude"):
         _, _, model = spec.partition(":")
         return ClaudeMind(model or "claude-sonnet-5-5")
+    if spec.startswith("file:"):
+        return FileMind(spec[5:])
     if not court:
         raise RuntimeError("a hive mind needs the court's address (--court or DBEE_COURT)")
     return HiveMind(court, spec, cls=seat, wait_s=wait_s)
+
+
+class FileMind:
+    """A person (or a session) in the doctor's seat: each turn's messages and tools
+    are written to ``<dir>/turn-N.json``, and the call waits for ``<dir>/reply-N.json``
+    ({"text": "...", "tool_calls": [{"name": ..., "arguments": {...}}]}). The seat
+    sees exactly what a mind would, nothing more."""
+
+    def __init__(self, dir: str):
+        self.dir = Path(dir)
+        self.dir.mkdir(parents=True, exist_ok=True)
+        self.name = "file:" + self.dir.name
+        self.n = 0
+        self.say = print
+
+    def chat(self, messages, tools=None, *, max_tokens=1024, temperature=0.0, effort="") -> Reply:
+        self.n += 1
+        ask = self.dir / f"turn-{self.n}.json"
+        ask.write_text(json.dumps({"messages": messages, "tools": [t["function"]["name"] for t in tools or []]}, indent=1))
+        rep = self.dir / f"reply-{self.n}.json"
+        t0 = time.time()
+        while not rep.exists():                       # the seat answers when it answers
+            time.sleep(0.5)
+        time.sleep(0.2)
+        r = json.loads(rep.read_text())
+        calls = [{"id": f"me_{self.n}_{i}", "name": c["name"], "arguments": c.get("arguments") or {}}
+                 for i, c in enumerate(r.get("tool_calls") or [])]
+        return Reply(text=r.get("text", ""), tool_calls=calls, seconds=time.time() - t0, mind=self.name)

@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import time
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
@@ -27,7 +28,7 @@ from .casebook import Casebook
 from .watch import Wake
 
 LOOK_BUDGET = 14
-WRITES = re.compile(r"writes|redirection|not a read-only family")
+WRITES = re.compile(r"writes|redirection")
 CURE_BUDGET = 2
 
 SYSTEM = """You are DBee, a doctor for machines. A fault woke you on the patient below. Work as a careful engineer:
@@ -75,7 +76,10 @@ class Case:
     finding: str = ""
     hand: dict | None = None
     close_said: dict | None = None
-    decide_now: bool = False                             # going round: the next turn may only decide                       # {cause, cause_removed, finding} as the mind said it
+    decide_now: bool = False
+    ungrounded: int = 0                                  # diagnoses refused for evidence never read
+    snapshots: list = field(default_factory=list)        # files backed up before a cure wrote them
+    transcript: list = field(default_factory=list)                             # going round: the next turn may only decide                       # {cause, cause_removed, finding} as the mind said it
     reopened_from: str = ""                              # the case this one reopens
     tokens_in: int = 0
     tokens_out: int = 0
@@ -103,7 +107,7 @@ class Doctor:
 
     # ---------------------------------------------------------------- the case
     def treat(self, wake: Wake, *, case_id: str | None = None, prior: "Case | None" = None) -> Case:
-        cid = case_id or (f"{prior.id}-r" if prior is not None else time.strftime("%Y%m%d-%H%M%S"))
+        cid = case_id or (f"{prior.id}-r" if prior is not None else time.strftime("%Y%m%d-%H%M%S") + "-" + os.urandom(2).hex())
         case = Case(id=cid, patient=self.patient.name, reopened_from=prior.id if prior is not None else "",
                     wake={"kind": wake.kind, "what": wake.what, "evidence": wake.evidence, "at": wake.at})
         self.say(f"[{case.id}] woke: {wake.kind} {wake.what}" + (f" (came back after {prior.id})" if prior is not None else ""))
@@ -153,6 +157,14 @@ class Doctor:
                             # the diagnosis is made at the diagnose effort: the light turn's draft is
                             # put back to the mind once, thinking at that effort, to confirm or revise
                             a = self._diagnose_again(case, msgs, tc, a) or a
+                        if not self._grounded(a.get("evidence", ""), first, case) and case.ungrounded < 2:
+                            case.ungrounded += 1
+                            case.refusals.append({"kind": "diagnose", "what": a.get("evidence", "")[:300],
+                                                  "why": "evidence not in anything read"})
+                            msgs.append({"role": "tool", "tool_call_id": tc.get("id", ""), "name": name,
+                                         "content": "refused: the evidence is not in anything you have read. "
+                                                    "Quote a line exactly as a look printed it, or look for the line that shows the mechanism."})
+                            continue
                         case.diagnosis = {"cause": a.get("cause", ""), "evidence": a.get("evidence", ""),
                                          "confidence": a.get("confidence"), "at": time.time()}
                         self.say(f"[{case.id}] diagnosis: {case.diagnosis['cause'][:200]}")
@@ -191,6 +203,7 @@ class Doctor:
             case.end, case.finding = "error", f"{type(e).__name__}: {e}"
             self.say(f"[{case.id}] error: {e}")
         case.closed = time.time()
+        case.transcript = msgs                               # what the mind saw and said, turn by turn
         if case.diagnosis and case.cures:
             last = case.cures[-1]
             self.casebook.record(case=case.id, patient=case.patient, sig=sig, cause=case.diagnosis["cause"],
@@ -254,21 +267,91 @@ class Doctor:
         whole definition with drop-ins, the machine's load, and what changed in the last hour."""
         cmds = ["uptime", "df -Ph", "free -m"]
         if wake.kind in ("unit_failed", "oom") and wake.what.endswith(".service"):
-            cmds = [f"systemctl status {wake.what} --no-pager -l | head -30",
+            cmds = [f"systemctl status {wake.what} --no-pager -l -n 0",
                     f"journalctl -u {wake.what} --no-pager -n 25 -o short-iso",
                     f"systemctl cat {wake.what} --no-pager"] + cmds
+            prog = self._unit_script(wake.what)
+            if prog:
+                cmds.append(f"head -80 {prog}")
         elif wake.kind == "health_miss":
             cmds = ["systemctl --failed --no-pager", "ss -ltnp"] + cmds
         else:
             cmds = ["journalctl --no-pager -n 30 -o short-iso -p warning", "systemctl --failed --no-pager"] + cmds
         # what changed: the first question on call. Config and installed files touched in
         # the last hour, newest first (a fault that just began usually has a change behind it)
-        cmds.append("find /etc /opt /usr/local /srv -xdev -type f -mmin -60 -printf '%TY-%Tm-%Td %TH:%TM  %u:%g %m  %p\\n' | sort -r | head -25")
+        cmds.append("find /etc /opt /usr/local /srv /run/systemd/transient -xdev -type f -mmin -60 -printf '%TY-%Tm-%Td %TH:%TM  %u:%g %m  %p\\n' | sort -r | head -25")
         parts = []
         for c in cmds:
             code, out = looks.look(self.patient, c, timeout=20)
             parts.append(f"$ {c}\n[exit {code}]\n{out}")
         return "\n\n".join(parts)
+
+    @staticmethod
+    def _grounded(evidence: str, first: str, case: "Case") -> bool:
+        """Some piece of the evidence (a line, or a clause between `;`) of a dozen
+        characters or more appears in what the doctor read, whitespace aside."""
+        norm = lambda t: re.sub(r"\s+", " ", t).strip().lower()
+        seen = norm(first + " " + " ".join(l.get("out", "") for l in case.looks)
+                    + " " + " ".join(c.get("out", "") + c.get("verify_out", "") for c in case.cures))
+        pieces = [norm(p).strip(" .,'\"`") for p in re.split(r"[\n;]|\.\.\.", evidence or "")]
+        return any(len(p) >= 12 and p in seen for p in pieces)
+
+    def _targets(self, command: str) -> list[str]:
+        """The files a cure would write: cp/mv/install destinations, redirection
+        targets, sed -i, truncate, chmod/chown/chgrp, rm and tee arguments."""
+        try:
+            segs = looks.segments(command)
+        except ValueError:
+            return []
+        out = []
+        for op, toks in segs:
+            if not toks:
+                continue
+            if op in (">", ">>"):
+                out.append(toks[0]); toks = toks[1:]
+                if not toks:
+                    continue
+            verb, args = toks[0].rsplit("/", 1)[-1], [t for t in toks[1:] if not t.startswith("-")]
+            if verb in ("cp", "mv", "install") and len(args) >= 2:
+                out.append(args[-1])
+                if verb == "mv":
+                    out += args[:-1]
+            elif verb == "sed" and any(t.startswith("-i") or t == "--in-place" for t in toks[1:]):
+                out += args[1:]
+            elif verb in ("truncate", "rm", "tee"):
+                out += args
+            elif verb in ("chmod", "chown", "chgrp") and len(args) >= 2:
+                out += args[1:]
+        return [t for t in out if t.startswith("/")]
+
+    def _snapshot(self, case: "Case", n: int, paths: list[str]) -> list[str]:
+        """Copy each file a cure is about to write, before it runs: whatever undo the
+        mind wrote, the machine can be put back (a delete is a move)."""
+        kept = []
+        for i, p in enumerate(paths):
+            dest = f"/var/lib/dbee/snap/{case.id}/{n}/{i}"
+            r = self.patient.run(f"[ -f {shlex.quote(p)} ] && [ $(stat -c %s {shlex.quote(p)}) -lt 67108864 ] "
+                                 f"&& mkdir -p {dest} && cp -a {shlex.quote(p)} {dest}/ && echo kept")
+            if "kept" in r.out:
+                kept.append(p)
+                case.snapshots.append({"cure": n, "path": p, "copy": f"{dest}/{p.rsplit('/', 1)[-1]}"})
+        return kept
+
+    def _restore(self, case: "Case", n: int) -> None:
+        for snap in case.snapshots:
+            if snap["cure"] == n:
+                self.patient.run(f"cp -a {shlex.quote(snap['copy'])} {shlex.quote(snap['path'])}")
+
+    def _unit_script(self, unit: str) -> str:
+        """The program a unit runs, when it is a script a person could read (text,
+        not a binary): a unit that dies silently is often only explained there."""
+        _, out = looks.look(self.patient, f"systemctl show -p ExecStart --value {unit}")
+        m = re.search(r"path=(\S+)", out) or re.search(r"^(/\S+)", out.strip())
+        if not m:
+            return ""
+        path = m.group(1).rstrip(";")
+        _, kind = looks.look(self.patient, f"file -b {path}")
+        return path if "text" in kind.lower() else ""
 
     def _opening(self, wake: Wake, first: str, precedents: list[dict], prior: "Case | None" = None) -> str:
         s = [f"PATIENT: {self.patient.name}", f"WOKE BY: {wake.kind} {wake.what}", f"EVENT: {wake.evidence or '(none recorded)'}",
@@ -336,6 +419,9 @@ class Doctor:
         case.cures.append(rec)
         case.save(self.home / "cases")                      # the undo is on disk before the command runs
         self.say(f"[{case.id}] cure: {cure.command}")
+        n = len(case.cures)
+        kept = self._snapshot(case, n, self._targets(cure.command))
+        rec["backed_up"] = kept
         r = self.patient.run(cure.command, timeout=120)
         rec.update(ran=time.time(), code=r.code, out=looks.cut(r.out)[-2000:])
         woke_code, woke_out = self._reread(wake)              # settles first: a unit mid-restart is not yet an answer
@@ -359,8 +445,11 @@ class Doctor:
         # red: undo (nothing to run when the mind said there is none)
         self.say(f"[{case.id}] verify red ({vcode}/{woke_code}); undoing")
         if cure.irreversible:
-            rec.update(undone=None, undo_code=None, undo_out="no undo: " + cure.undo)
-            undo_said = "There was no undo to run (you said so)."
+            self._restore(case, n)
+            rec.update(undone=time.time() if kept else None, undo_code=None,
+                       undo_out=("restored from the copies taken before the cure: " + ", ".join(kept)) if kept else "no undo: " + cure.undo)
+            undo_said = ("You gave no undo; the files it wrote were restored from the copies taken before it ran."
+                         if kept else "There was no undo to run (you said so).")
         else:
             u = self.patient.run(cure.undo, timeout=120)
             rec.update(undone=time.time(), undo_code=u.code, undo_out=looks.cut(u.out)[-1000:])
@@ -393,10 +482,16 @@ class Doctor:
             # (bounded: the one honest wait, on a state the machine is still changing)
             end = time.time() + settle_s
             while True:
-                code, out = looks.look(self.patient, f"systemctl is-active {wake.what}")
-                if out.strip() != "activating" or time.time() > end:
-                    return code, out
-                time.sleep(1)
+                _, out = looks.look(self.patient, f"systemctl show -p ActiveState,Result,Type {wake.what}")
+                st = dict(l.split("=", 1) for l in out.splitlines() if "=" in l)
+                state, result, typ = st.get("ActiveState", ""), st.get("Result", ""), st.get("Type", "")
+                if state == "activating" and time.time() < end:
+                    time.sleep(1)
+                    continue
+                said = f"{state} (result {result}{', ' + typ if typ == 'oneshot' else ''})"
+                # a oneshot that ran and succeeded is inactive with result success: green
+                ok = state == "active" or (typ == "oneshot" and state == "inactive" and result == "success")
+                return (0 if ok else 3), said
         if wake.kind == "health_miss":
             code, out = looks.look(self.patient, f"curl -s -o /dev/null -w '%{{http_code}}' --max-time 3 {wake.what}")
             return (0 if out.strip().startswith("2") else 1), out

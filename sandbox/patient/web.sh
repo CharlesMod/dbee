@@ -1,7 +1,5 @@
 #!/bin/sh
-# The patient's one service: serves a page on :8080 and writes a log line a
-# second. A failed write (disk full, permissions) ends it with exit 1, the way a
-# real service dies on its log.
+# patient-web: serves the site on :8080 and logs a heartbeat every second.
 set -u
 log=/var/log/patient/web.log
 mkdir -p /var/log/patient /srv/patient

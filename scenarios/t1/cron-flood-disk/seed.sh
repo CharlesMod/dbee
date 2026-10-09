@@ -1,7 +1,7 @@
 #!/bin/sh
 # A cron entry that appends ~80 MB a minute to a log on the service's small log filesystem.
 # Reads the log's own mount, never /. Refused (exit 4) when there is no log dir, no cron,
-# or the log dir is already full. Waits for the cron job to fire and the service to fail.
+# or the log dir is already full. The job runs once at seed time; cron runs it again every minute.
 dir=/var/log/patient
 m=/run/.sim/seeded
 [ -d "$dir" ] || { echo "refused: no $dir on this patient"; exit 4; }
@@ -18,7 +18,12 @@ PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 CRON
 chmod 644 /etc/cron.d/patient-report
 systemctl start cron.service 2>/dev/null
-for i in $(seq 1 85); do
+# the job has run once already when the incident begins: run its line now, as cron would,
+# instead of waiting for the next minute (the entry stays, so the fault recurs on cron's clock)
+yes "report row $(date -Is) customer=acme status=ok total=1234.56" | head -c 80000000 >> /var/log/patient/report.log 2>/dev/null
+# the service fails when its next write needs a page the full filesystem cannot give (tens of
+# seconds of heartbeats): wait for that event, not a clock; the loop ends the moment it lands
+for i in $(seq 1 90); do
     [ "$(systemctl is-active patient-web.service)" != active ] && break
     sleep 1
 done
