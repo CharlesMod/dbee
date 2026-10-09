@@ -142,3 +142,41 @@ def test_a_slow_mind_that_keeps_talking_is_not_timed_out(monkeypatch):
         srv.shutdown()
     assert r.tool_calls == [{"id": "c1", "name": "look", "arguments": {"cmd": "df -h"}}]
     assert (r.tokens_in, r.tokens_out) == (4607, 12)
+
+
+class _Court(BaseHTTPRequestHandler):
+    """The court and its engine in one: a grant naming slot 1, then the call."""
+    chats: list = []
+
+    def _json(self, out):
+        data = json.dumps(out).encode()
+        self.send_response(200); self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
+
+    def do_GET(self):
+        self._json({"url": f"http://127.0.0.1:{self.server.server_port}", "node": "n1", "slot": 1})
+
+    def do_POST(self):
+        body = json.loads(self.rfile.read(int(self.headers["Content-Length"])) or b"{}")
+        if self.path.endswith("/chat/completions"):
+            _Court.chats.append(body)
+            self._json({"choices": [{"message": {"content": "ok"}}], "usage": {"prompt_tokens": 5, "completion_tokens": 1}})
+        else:
+            self._json({})
+
+    def log_message(self, *a):
+        pass
+
+
+def test_a_hive_call_lands_on_the_slot_its_grant_named():
+    from dbee.minds import HiveMind
+    _Court.chats = []
+    srv = HTTPServer(("127.0.0.1", 0), _Court)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        r = HiveMind(f"http://127.0.0.1:{srv.server_port}", "gemma-4-26b-a4b-iq3s", wait_s=5).chat(
+            [{"role": "user", "content": "x"}], max_tokens=8)
+    finally:
+        srv.shutdown()
+    assert _Court.chats[0]["id_slot"] == 1          # never a slot llama-server picks by LRU (another caller's)
+    assert r.served == {"node": "n1", "url": f"http://127.0.0.1:{srv.server_port}", "slot": 1}

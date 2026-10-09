@@ -252,6 +252,10 @@ class HiveMind:
         # n_predict beside max_tokens: the engine's own cap, which a pin's default
         # otherwise overrides (seen: 12000 on a call that asked 4096)
         body = openai_body(self.model, messages, tools, max_tokens, temperature, effort)
+        if grant.get("slot") is not None:
+            # the seat the court granted, not one llama-server picks: an unpinned call
+            # lands by LRU on another caller's slot and reads that conversation's state
+            body["id_slot"] = int(grant["slot"])
         t0 = time.time()
         usage, out = {}, {}
         try:
