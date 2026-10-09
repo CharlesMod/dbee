@@ -78,8 +78,13 @@ func (s *Setup) machineData(c wizard.Context) (any, error) {
 	}
 	rows = append(rows, [2]string{"Disk at " + s.Root, free})
 	hive := "No Hive found. DBee does not need one."
-	if s.Hive.Here {
-		hive = "A Hive is here. DBee will reuse its engine and models, and can use its minds."
+	switch {
+	case s.Hive.Here && s.Hive.Court != "":
+		hive = "A Hive is here (its court: " + s.Hive.Court + "). DBee will reuse its engine and models, and can use its minds."
+	case s.Hive.Here:
+		hive = "A Hive is here. DBee will reuse its engine and models."
+	case s.Hive.Court != "":
+		hive = "A Hive answers at " + s.Hive.Court + ". DBee can use its minds."
 	}
 	return map[string]any{"rows": rows, "hive": hive}, nil
 }
@@ -209,6 +214,7 @@ func (s *Setup) readyData(c wizard.Context) (any, error) {
 	rows := [][2]string{
 		{"Install folder", s.Root},
 		{"Mind", ch.MindName()},
+		{"Watches", s.watchingText(ch)},
 		{"Takes about", gbText(n) + " of disk"},
 	}
 	out := map[string]any{"items": items, "rows": rows}
@@ -216,6 +222,17 @@ func (s *Setup) readyData(c wizard.Context) (any, error) {
 		out["error"] = fmt.Sprintf("This needs about %s and the disk has %s free.", gbText(n), fmtGB(s.Profile.DiskFree))
 	}
 	return out, nil
+}
+
+func (s *Setup) watchingText(ch choice) string {
+	if ch.Whole {
+		return "the whole machine"
+	}
+	w := strings.Join(ch.Watches, ", ")
+	if ch.Health != "" {
+		w += "; " + ch.Health + " should answer"
+	}
+	return w
 }
 
 func (s *Setup) servicesLine(ch choice) string {
@@ -250,7 +267,7 @@ func (s *Setup) doneData(c wizard.Context) (any, error) {
 	return map[string]any{
 		"head": "DBee is watching " + watching + " with " + ch.MindName() + ".",
 		"rows": [][2]string{
-			{"Its cases", filepath.Join(s.Root, "home") + " (one folder per case)"},
+			{"Its cases", filepath.Join(s.Root, "home", "cases") + " (one file per case)"},
 			{"Its log", filepath.Join(s.Root, "logs", "dbee.log")},
 			{"Run it by hand", bin + " --help"},
 			{"Stop it", "stop the dbee service; the folder and services stay until you uninstall"},

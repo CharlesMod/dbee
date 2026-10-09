@@ -271,3 +271,27 @@ func TestParsersReadEachPlatformsListing(t *testing.T) {
 		t.Fatal(us, err)
 	}
 }
+
+func TestTheMachinePageSaysTheHiveTheMindPageOffers(t *testing.T) {
+	b := newBox(t)
+	s := b.setup(cpuOnly8GB, func(s *Setup) { s.Hive = Hive{Court: "http://court.invalid:1"} })
+	d := serve(t, s)
+	defer d.stop()
+	if h, _ := d.page("machine")["hive"].(string); !strings.Contains(h, "http://court.invalid:1") {
+		t.Fatalf("a court reached from here is a Hive the machine page says: %q", h)
+	}
+}
+
+func TestReadyAndDoneSayWhatIsWatchedAndWhereTheCasesAre(t *testing.T) {
+	b := newBox(t)
+	d := serve(t, b.setup(cpuOnly8GB, nil))
+	defer d.stop()
+	d.check("mind", map[string]any{"mind_kind": "local", "model": "tiny"})
+	d.check("watch", map[string]any{"watch": []string{"cron", "nginx"}})
+	if rows := fmt.Sprint(d.page("ready")["rows"]); !strings.Contains(rows, "cron, nginx") {
+		t.Fatalf("ready names the services: %s", rows)
+	}
+	if rows := fmt.Sprint(d.page("done")["rows"]); !strings.Contains(rows, filepath.Join("home", "cases")) {
+		t.Fatalf("done points at the cases folder: %s", rows)
+	}
+}
