@@ -29,7 +29,7 @@ FAMILIES: dict[str, tuple[str, ...]] = {
     "pgrep": (), "fuser": ("-k", "-K", "--kill"), "lsusb": (), "lspci": (), "sysctl": ("-w", "--write"),
     "crontab": ("-e", "-r"), "mount": ("-o", "-a", "--bind", "--move"), "nginx": ("-s",), "sshd": (), "python3": ("-c", "-m"),
     "ulimit": (), "lscpu": (), "vmstat": (), "iostat": (), "top": ("-d",), "numfmt": (), "sort": (), "uniq": (), "cut": (), "awk": (), "sed": ("-i", "--in-place", "w", "e"),
-    "test": (), "true": (), "echo": (), "printf": (), "stat": (), "md5sum": (), "sha256sum": (), "openssl": ("req", "genrsa", "genpkey", "rand"),
+    "test": (), "true": (), "echo": (), "printf": (), "stat": (), "md5sum": (), "sha256sum": (), "openssl": ("req", "genrsa", "genpkey", "rand", "-out", "-keyout", "ca", "enc", "dgst", "-sign"),
     "timedatectl": ("set-time", "set-timezone", "set-ntp", "set-local-rtc"), "hostnamectl": ("set-hostname", "set-icon-name", "set-chassis"),
     "nslookup": (), "dig": (), "host": (), "netstat": (), "resolvectl": ("flush-caches", "reset-statistics", "revert", "dns", "domain"),
 }
@@ -37,7 +37,7 @@ FILTERS = {"grep", "tail", "head", "wc", "sort", "uniq", "cut", "awk", "sed", "t
 SECRET = re.compile(r"(?i)(api[_-]?key|token|password|(?<![/\w])passwd(?!\b/)|secret|authkey|private[_-]?key|\.ssh/|id_(rsa|ed25519|ecdsa|dsa)\b|/etc/shadow|\.pem\b|\.key\b|tailscaled\.state|\.gnupg/|\.netrc|credentials)")
 
 
-HARMLESS_REDIR = re.compile(r"(?<![\w/])(?:[12]?>&[12]|&?[12]?>\s*/dev/null)(?![\w/])")
+HARMLESS_REDIR = re.compile(r"(?<![\w/])(?:[12]?>&[12]|&?[12]?>\s*/dev/null|<\s*/dev/null)(?![\w/])")
 OPS = {";", "&&", "||", "|", "&", ">", ">>", "<", "<<", "(", ")", ">&", "<&", "&>", "|&"}
 
 
@@ -82,12 +82,22 @@ def check(cmd: str) -> str:
         return "the doctor already runs as the patient's root; no sudo"
     if fam not in FAMILIES:
         return f"`{fam}` is not a read-only family a look may start with"
+    args = head[1:]
     for bad in FAMILIES[fam]:
-        if bad in head[1:]:
+        for i, t in enumerate(args):
+            if t != bad:
+                continue
+            if bad in ("-o", "--output") and i + 1 < len(args) and args[i + 1] == "/dev/null":
+                continue                    # output thrown away writes nothing
             return f"`{fam} {bad}` writes; a look only reads"
     if fam in ("awk", "sed") and any(t for t in head[1:] if "system(" in t or ">" in t):
         return "no shell-outs or writes inside awk/sed"
     for fh in parts[1:]:
+        if fh and fh[0] == "openssl":       # reading a certificate or key from the pipe
+            bad = next((b for b in FAMILIES["openssl"] if b in fh[1:]), None)
+            if bad:
+                return f"`openssl {bad}` writes; a look only reads"
+            continue
         if not fh or fh[0] not in FILTERS:
             return f"`{(fh or ['?'])[0]}` is not a filter a look may use (grep, tail, head, wc, sort, uniq, cut, awk, sed, tr, jq)"
         if fh[0] == "sed" and any(x in fh[1:] for x in ("-i", "--in-place")):
