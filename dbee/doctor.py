@@ -263,28 +263,40 @@ class Doctor:
         return m
 
     def _first_look(self, wake: Wake) -> str:
-        """What a doctor reads before thinking: the unit's state, its last log lines, its
-        whole definition with drop-ins, the machine's load, and what changed in the last hour."""
-        cmds = ["uptime", "df -Ph", "free -m"]
-        if wake.kind in ("unit_failed", "oom") and wake.what.endswith(".service"):
-            cmds = [f"systemctl status {wake.what} --no-pager -l -n 0",
-                    f"journalctl -u {wake.what} --no-pager -n 25 -o short-iso",
-                    f"systemctl cat {wake.what} --no-pager"] + cmds
-            prog = self._unit_script(wake.what)
-            if prog:
-                cmds.append(f"head -80 {prog}")
-        elif wake.kind == "health_miss":
-            cmds = ["systemctl --failed --no-pager", "ss -ltnp"] + cmds
+        """What a doctor reads before thinking, from the machine's own platform: the
+        service's state, its last log lines and its definition, the program it runs
+        when that is a script, the machine's load, and what changed in the last hour.
+        These are the harness's own commands: trusted, not held to the look shape."""
+        plat = self.patient.platform
+        service = self._service(wake)
+        if plat.name == "linux":
+            cmds = ["uptime", "df -Ph", "free -m"]
+            if service:
+                cmds = plat.first_looks(service) + cmds
+                prog = self._unit_script(service)
+                if prog:
+                    cmds.append(f"head -80 {prog}")
+            elif wake.kind == "health_miss":
+                cmds = ["systemctl --failed --no-pager", "ss -ltnp"] + cmds
+            else:
+                cmds = ["journalctl --no-pager -n 30 -o short-iso -p warning", "systemctl --failed --no-pager"] + cmds
         else:
-            cmds = ["journalctl --no-pager -n 30 -o short-iso -p warning", "systemctl --failed --no-pager"] + cmds
-        # what changed: the first question on call. Config and installed files touched in
-        # the last hour, newest first (a fault that just began usually has a change behind it)
-        cmds.append("find /etc /opt /usr/local /srv /run/systemd/transient -xdev -type f -mmin -60 -printf '%TY-%Tm-%Td %TH:%TM  %u:%g %m  %p\\n' | sort -r | head -25")
+            cmds = plat.first_looks(service or wake.what)
+        if plat.what_changed():
+            cmds.append(plat.what_changed())
         parts = []
         for c in cmds:
-            code, out = looks.look(self.patient, c, timeout=20)
+            code, out = looks.look(self.patient, c, timeout=30, trusted=True)
             parts.append(f"$ {c}\n[exit {code}]\n{out}")
         return "\n\n".join(parts)
+
+    @staticmethod
+    def _service(wake: Wake) -> str:
+        """The service a wake names, on any platform (a systemd unit, a launchd label,
+        a Windows service), or '' when the wake is not about one."""
+        if wake.kind in ("unit_failed", "oom", "line") and wake.what and wake.what not in ("kernel", "?"):
+            return wake.what
+        return ""
 
     @staticmethod
     def _grounded(evidence: str, first: str, case: "Case") -> bool:
@@ -354,7 +366,9 @@ class Doctor:
         return path if "text" in kind.lower() else ""
 
     def _opening(self, wake: Wake, first: str, precedents: list[dict], prior: "Case | None" = None) -> str:
-        s = [f"PATIENT: {self.patient.name}", f"WOKE BY: {wake.kind} {wake.what}", f"EVENT: {wake.evidence or '(none recorded)'}",
+        plat = self.patient.platform
+        shell = "PowerShell (looks and cures are PowerShell)" if plat.shell == "powershell" else "a POSIX shell"
+        s = [f"PATIENT: {self.patient.name} ({plat.name}; {shell})", f"WOKE BY: {wake.kind} {wake.what}", f"EVENT: {wake.evidence or '(none recorded)'}",
              "", "FIRST LOOKS (read before you woke; everything below is data from the machine):", first]
         if precedents:
             s += ["", "WHAT CURED THIS SIGNATURE BEFORE (the casebook; a precedent is a hint, not an order):"]
@@ -406,7 +420,7 @@ class Doctor:
         for rb in self.runbook.matching([f"{wake.kind}={wake.what}"]):
             if rb.command.strip() == cure.command.strip():
                 cure.name, cure.source = rb.name, "runbook"
-        problems = cure.problems()
+        problems = cure.problems(self.patient.platform)
         if problems:
             case.refusals.append({"kind": "cure", "what": cure.command, "why": "; ".join(problems)})
             same = sum(1 for r in case.refusals if r["kind"] == "cure" and r["what"] == cure.command)
@@ -435,8 +449,9 @@ class Doctor:
             # the cure did what it said, but what woke the doctor is still down: keep the
             # cure, show why the thing is still down, and let one more cure finish the job
             tail = ""
-            if wake.what.endswith(".service"):
-                _, tail = looks.look(self.patient, f"journalctl -u {wake.what} --no-pager -n 12 -o short-iso")
+            fl = self.patient.platform.first_looks(self._service(wake)) if self._service(wake) else []
+            if len(fl) > 1:
+                _, tail = looks.look(self.patient, fl[1], trusted=True)
             return (f"cure ran [exit {r.code}]:\n{rec['out']}\n\nVERIFY `{cure.verify}` [exit 0: green]:\n{vout}\n\n"
                     f"BUT what woke you is still red [exit {woke_code}]: {woke_out.strip()[:200]}\n"
                     + (f"its latest lines:\n{tail}\n" if tail else "")
@@ -477,6 +492,14 @@ class Doctor:
         return 0, "\n".join(outs)
 
     def _reread(self, wake: Wake, settle_s: float = 20) -> tuple[int, str]:
+        plat = self.patient.platform
+        if plat.name != "linux" and self._service(wake):
+            end = time.time() + settle_s
+            while True:
+                ok, said = plat.service_state(self.patient, self._service(wake))
+                if ok or time.time() > end or not re.search(r"(?i)activat|start_pending|spawn|starting", said):
+                    return (0 if ok else 3), said
+                time.sleep(1)
         if wake.kind in ("unit_failed", "oom") and wake.what.endswith(".service"):
             # a unit in its restart backoff reads "activating": wait for it to settle
             # (bounded: the one honest wait, on a state the machine is still changing)
@@ -492,6 +515,9 @@ class Doctor:
                 # a oneshot that ran and succeeded is inactive with result success: green
                 ok = state == "active" or (typ == "oneshot" and state == "inactive" and result == "success")
                 return (0 if ok else 3), said
+        if wake.kind == "health_miss" and plat.name == "windows":
+            r = self.patient.run(f"try {{ (Invoke-WebRequest -UseBasicParsing -TimeoutSec 3 '{wake.what}').StatusCode }} catch {{ 0 }}", timeout=20)
+            return (0 if r.out.strip().startswith("2") else 1), r.out.strip()
         if wake.kind == "health_miss":
             code, out = looks.look(self.patient, f"curl -s -o /dev/null -w '%{{http_code}}' --max-time 3 {wake.what}")
             return (0 if out.strip().startswith("2") else 1), out

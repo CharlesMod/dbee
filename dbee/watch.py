@@ -127,3 +127,40 @@ class HealthWatcher(threading.Thread):
 
     def end(self):
         self.stop.set()
+
+
+class EventWatcher(threading.Thread):
+    """The platform's own event stream (journald, macOS's unified log, the Windows
+    event log subscription), parsed by the platform into wakes. One watcher for any
+    machine; `service` narrows it to one service and its critical lines."""
+
+    def __init__(self, patient, q: Queue, service: str = "", pattern: str = ""):
+        super().__init__(daemon=True)
+        self.patient, self.q, self.service = patient, q, service
+        self.plat = patient.platform
+        if pattern:
+            import copy
+            self.plat = copy.copy(self.plat)
+            self.plat.critical = pattern
+        self.stop = threading.Event()
+        self.proc = None
+
+    def run(self):
+        cmd = self.plat.watch_cmd(self.service)
+        if not cmd:
+            return
+        self.proc = self.patient.stream(cmd)
+        for line in self.proc.stdout:
+            if self.stop.is_set():
+                break
+            ev = self.plat.parse_event(line, self.service)
+            if ev:
+                self.q.put(Wake(ev["kind"], ev["what"], evidence=ev.get("evidence", "")))
+
+    def end(self):
+        self.stop.set()
+        if self.proc:
+            try:
+                self.proc.terminate()
+            except Exception:
+                pass

@@ -28,27 +28,27 @@ stands.
 
 **Patients: reaching a machine**
 - [x] Linux: local, ssh, podman (2026-10-09)
-- [ ] macOS: local and ssh (zsh/bash; `/bin/sh` is fine)
-- [ ] Windows: local PowerShell and OpenSSH-to-PowerShell (`powershell -NoProfile -Command`); one quoting layer, tested
-- [ ] A patient says what it is (os, init, log source, shell) once: a capability, not a check repeated in every look
+- [x] macOS: local, ssh, and a Hive frame by `hive run` (2026-10-09; live on a macOS 26.5 frame: detected, `com.hive.drone` resolved to its user domain and read running)
+- [x] Windows: local PowerShell, OpenSSH-to-PowerShell and a WSL frame's Windows side by `hive run` (one layer: `-EncodedCommand`, progress silenced, text out) (2026-10-09; live on Windows 11 Pro / PowerShell 5.1: Tailscale resolved through the SCM, state, ports, events read)
+- [x] A patient says what it is once (`patient.platform`, `dbee platform`): linux/systemd, macos/launchd, windows/scm (2026-10-09)
 
 **Watchers: what wakes it (events, never a poll except the honest health watchdog)**
 - [x] journald follow: unit failed, OOM kill, a line matching a pattern (2026-10-09)
-- [ ] macOS: `log stream --predicate` (process or subsystem, level error/fault); launchd job exit status
-- [ ] Windows: Event Log subscription (`Get-WinEvent` / `wevtutil` query by provider and level; Service Control Manager 7031/7034 "service terminated unexpectedly")
+- [x] macOS: `log stream --style ndjson` (errors, faults, launchd's abnormal exits); pinned by recorded lines (2026-10-09) — a live stream on the Mac is next (a Hive frame cannot be streamed through jobs)
+- [x] Windows: an `EventLogWatcher` subscription (event-driven, no poll): SCM 7031/7034/7023/7024/7000/7009 and critical/error events naming the service; pinned by recorded events (2026-10-09) — a live stream is next
 - [ ] Plain log file tail for anything else (follow by name across rotation)
 - [ ] Debounce and fold: one case per fault, a storm of lines is one wake
 
-**Point it at a service**
+**Point it at a service** (`dbee watch SERVICE` resolves the service per platform and watches its stream with the platform's critical-line default, `--pattern` to override: built 2026-10-09, live run on macOS and Windows next)
 - [ ] `dbee watch SERVICE`: works out the service's log source and manager on its own (systemd unit / launchd label / Windows service name), with the critical-line patterns defaulted per platform (`crit|emerg|fatal|panic|segfault|Traceback|OOM|failed`) and overridable
 - [ ] `dbee.toml`: services, patterns, the mind, budgets, quiet hours; one file, no env sprawl
 - [ ] Install as a service itself: systemd unit, launchd plist, Windows service (or a scheduled task at boot); survives reboot, runs with the least rights the cures need
 
 **Looks and cures per platform**
-- [ ] Read-only families for macOS (`log show`, `launchctl print`, `lsof`, `vm_stat`, `diskutil info`, `scutil --dns`, `security find-certificate`) and Windows (`Get-Service`, `Get-WinEvent`, `Get-Process`, `Get-NetTCPConnection`, `Get-Volume`, `Get-ChildItem`, `Get-Content -Tail`, `Test-NetConnection`)
-- [ ] Each platform's NEVER list (Windows: `Format-Volume`, `Remove-Item -Recurse` of system trees, `bcdedit`, registry hive deletes; macOS: `diskutil erase*`, `csrutil`, `rm -rf /System`…)
+- [x] Read-only families for macOS (`log show`, `launchctl print`, `lsof`, `vm_stat`, `diskutil info`, `scutil --dns`, `security find-certificate`) and Windows (a PowerShell checker read by effect: read verbs and aliases, native tools with their write arguments, no call operator, no redirection but `2>$null`, no write methods, no secret stores) (2026-10-09, 61 tests)
+- [x] Each platform's NEVER list (Windows: `Format-Volume`, `Remove-Item -Recurse` of system trees, `bcdedit`, registry hive deletes; macOS: `diskutil erase*`, `csrutil`, `rm -rf /System`…)
 - [ ] Pre-cure backups on every platform (a delete is a move)
-- [ ] Re-read of what woke it per manager: systemd (oneshot by result), launchd (last exit status), Windows SCM (Running / Stopped with exit code)
+- [x] Re-read of what woke it per manager: systemd (oneshot by result), launchd (running, or a clean last exit), Windows SCM (Win32_Service state and exit code) (2026-10-09)
 
 **Minds**
 - [x] The Hive's router (any model it serves), Claude, a file seat for a person (2026-10-09)

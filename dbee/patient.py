@@ -23,8 +23,24 @@ class Result:
         return self.out[-6000:]
 
 
+# PowerShell run without a console wraps its progress and error streams in CLIXML;
+# a doctor reads text: progress off, errors as plain lines, wide output not cut
+PS_PRELUDE = ("$ProgressPreference='SilentlyContinue'; $ErrorView='NormalView'; "
+              "$PSDefaultParameterValues['Out-String:Width']=220; ")
+
+
 class Patient:
     name = "patient"
+    shell = "sh"
+    _platform = None
+
+    @property
+    def platform(self):
+        """What this machine is (Linux, macOS, Windows), asked once and kept."""
+        if self._platform is None:
+            from .platform import detect
+            self._platform = detect(self)
+        return self._platform
 
     def argv(self, cmd: str, user: str = "root", interactive: bool = False) -> list[str]:
         raise NotImplementedError
@@ -50,17 +66,32 @@ class Patient:
 class Local(Patient):
     name = "local"
 
+    def __init__(self):
+        import os
+        self.shell = "powershell" if os.name == "nt" else "sh"
+
     def argv(self, cmd, user="root", interactive=False):
+        if self.shell == "powershell":
+            return ["powershell", "-NoProfile", "-NonInteractive", "-Command", cmd]
         return ["sh", "-c", cmd]
 
 
 class Ssh(Patient):
-    def __init__(self, host: str):
+    """A machine over OpenSSH. `shell="powershell"` for a Windows host (its
+    OpenSSH default shell may be cmd: the command is handed to PowerShell)."""
+
+    def __init__(self, host: str, shell: str = "sh"):
         self.host = host
         self.name = host
+        self.shell = shell
 
     def argv(self, cmd, user="root", interactive=False):
-        return ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", self.host, cmd]
+        base = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", self.host]
+        if self.shell == "powershell":
+            import base64
+            enc = base64.b64encode((PS_PRELUDE + cmd).encode("utf-16-le")).decode()
+            return base + [f"powershell -NoProfile -NonInteractive -OutputFormat Text -EncodedCommand {enc}"]
+        return base + [cmd]
 
 
 def _podman() -> list[str]:
@@ -111,3 +142,39 @@ class Podman(Patient):
         p = subprocess.run([*self.pm, "cp", src, f"{self.container}:{dst}"], capture_output=True, text=True)
         if p.returncode != 0:
             raise RuntimeError(f"podman cp: {p.stderr.strip()}")
+
+
+class Hive(Patient):
+    """A frame of the Hive, reached the Hive's own way: each command is a job
+    (`hive run FRAME LINE`), its exit the job's. `shell="powershell"` reaches the
+    Windows side of a frame whose drone runs in WSL, through WSL's interop.
+    Jobs end, so a Hive patient can be looked at and treated but not streamed:
+    its watcher is the Hive's own spine."""
+
+    PS = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+    DONE = __import__("re").compile(r"^\S+: (succeeded|failed|cancelled|timed out)[^\n]*?exit (-?\d+)[^\n]*\(job \w+\)\s*$", __import__("re").M)
+
+    def __init__(self, frame: str, shell: str = "sh", hive: str = ""):
+        import shutil
+        self.frame, self.name, self.shell = frame, frame, shell
+        self.hive = hive or shutil.which("hive") or "hive"
+
+    def argv(self, cmd, user="root", interactive=False):
+        if self.shell == "powershell":
+            import base64
+            enc = base64.b64encode(PS_PRELUDE.__add__(cmd).encode("utf-16-le")).decode()
+            cmd = f"{self.PS} -NoProfile -NonInteractive -OutputFormat Text -EncodedCommand {enc}"
+        return [self.hive, "run", self.frame, cmd]
+
+    def run(self, cmd, *, timeout=60, user="root", input=None):
+        r = super().run(cmd, timeout=timeout + 30, user=user)
+        m = None
+        for m in self.DONE.finditer(r.out):
+            pass
+        if not m:
+            return r
+        out = (r.out[:m.start()] + r.out[m.end():]).rstrip("\n")
+        return Result(int(m.group(2)), out)
+
+    def stream(self, cmd):
+        raise RuntimeError("a Hive patient is not streamed: watch it through the Hive's spine")

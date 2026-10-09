@@ -62,11 +62,13 @@ REDIRS = {">", ">>", "<", "<<", ">&", "<&", "&>", "|&", "&", "(", ")"}
 JOINS = {"", "|", "&&", "||", ";"}
 
 
-def check(cmd: str) -> str:
-    """Why this look may not run, or '' when it may. A look is judged by its effect:
+def check(cmd: str, families: dict | None = None) -> str:
+    """Why this look may not run, or '' when it may (on a POSIX shell; `families` is
+    the platform's read-only verbs, Linux's by default). A look is judged by its effect:
     any chain of commands (`|`, `&&`, `||`, `;`) is allowed when every command in it
     only reads. Redirection and background are refused, except the harmless kinds
     (merging or discarding output, no input)."""
+    fams = families if families is not None else FAMILIES
     if not cmd.strip():
         return "empty"
     if "$(" in cmd or "`" in cmd:
@@ -95,10 +97,10 @@ def check(cmd: str) -> str:
             if verb in ("awk", "sed") and any("system(" in t or ">" in t for t in toks[1:]):
                 return "no shell-outs or writes inside awk/sed"
             continue
-        if verb not in FAMILIES:
+        if verb not in fams:
             return f"`{verb}` is not on the doctor's read-only list; read it another way"
         args = toks[1:]
-        for bad in FAMILIES[verb]:
+        for bad in fams[verb]:
             for i, t in enumerate(args):
                 if t != bad:
                     continue
@@ -126,9 +128,10 @@ def cut(out: str) -> str:
 SECRET_VALUE = re.compile(r"(?i)\b((?:api[_-]?key|token|password|passwd|secret|authkey)[a-z_]*)\s*[=:]\s*\S+")
 
 
-def look(patient, cmd: str, *, timeout: float = 30) -> tuple[int, str]:
-    """Run one look on the patient. A refused look returns (126, why)."""
-    why = check(cmd)
+def look(patient, cmd: str, *, timeout: float = 30, trusted: bool = False) -> tuple[int, str]:
+    """Run one look on the patient, checked by the patient's platform. A refused
+    look returns (126, why). `trusted` is the harness's own look (unchecked)."""
+    why = "" if trusted else patient.platform.check_look(cmd)
     if why:
         return 126, f"refused: {why}"
     r = patient.run(cmd, timeout=timeout)

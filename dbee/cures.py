@@ -51,7 +51,7 @@ ALLOWED = {"systemctl", "truncate", "rm", "mv", "cp", "ln", "mkdir", "chmod", "c
 FORBIDDEN_FOR = {"rm": ("-r", "-R", "-rf", "-fr", "--recursive"), "find": ("-exec", "-execdir", "-ok", "-delete"), "kill": ("-9", "-KILL", "-SIGKILL")}
 
 
-def check_cure(cmd: str) -> str:
+def check_cure(cmd: str, never: list | None = None, verbs: set | None = None, families: dict | None = None) -> str:
     """Why this command may not be a cure, or ''."""
     if not cmd.strip():
         return "empty"
@@ -59,7 +59,10 @@ def check_cure(cmd: str) -> str:
         return "a cure is one line"
     if "$(" in cmd or "`" in cmd:
         return "no command substitution in a cure"
-    for pat, why in NEVER:
+    never = NEVER + (never or [])
+    verbs = ALLOWED | (verbs or set())
+    fams = families if families is not None else looks.FAMILIES
+    for pat, why in never:
         if pat.search(cmd):
             return f"never: {why}"
     # each simple command (split on ; && || |) must start with an allowed verb
@@ -76,7 +79,7 @@ def check_cure(cmd: str) -> str:
         verb = toks[0].rsplit("/", 1)[-1]
         if verb == "sudo":
             return "the doctor already runs as root; no sudo"
-        if verb not in ALLOWED and verb not in looks.FAMILIES:
+        if verb not in verbs and verb not in fams:
             return f"`{verb}` is not a verb a cure may use"
         for bad in FORBIDDEN_FOR.get(verb, ()):
             if bad in toks[1:]:
@@ -84,13 +87,13 @@ def check_cure(cmd: str) -> str:
     return ""
 
 
-def check_verify(cmd: str) -> str:
+def check_verify(cmd: str, plat=None) -> str:
     """A verify is a look, or several looks joined by `&&` (all must pass)."""
     parts = split_and(cmd)
     if len(parts) > 4:
         return "at most four looks in a verify"
     for p in parts:
-        if (w := looks.check(p)):
+        if (w := (plat.check_look(p) if plat else looks.check(p))):
             return w
     return ""
 
@@ -144,21 +147,22 @@ class Cure:
         counted: a reversible shape (mv aside, stop the writer) scores better."""
         return bool(re.match(r"^\s*none\s*:\s*\S", self.undo or ""))
 
-    def problems(self) -> list[str]:
+    def problems(self, plat=None) -> list[str]:
         out = []
-        if (w := check_cure(self.command)):
+        cc = plat.check_cure if plat else check_cure
+        if (w := cc(self.command)):
             out.append(f"command: {w}")
         if not self.undo.strip():
             out.append("undo: name the undo, or say `none: <why nothing can restore it>`")
         elif self.irreversible:
             pass
-        elif (w := check_cure(self.undo)):
+        elif (w := cc(self.undo)):
             out.append(f"undo: {w}")
         elif _noop(self.undo):
             out.append("undo: that does nothing; name a real undo (mv back, stop/start, restore the file) or say `none: <why>`")
         if not self.verify.strip():
             out.append("verify: a cure names how it will be checked")
-        elif (w := check_verify(self.verify)):
+        elif (w := check_verify(self.verify, plat)):
             out.append(f"verify must be read-only looks (joined by && at most): {w}")
         return out
 
