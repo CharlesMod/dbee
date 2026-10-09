@@ -57,7 +57,7 @@ stands.
 
 **Reach the human**
 - [ ] A hand-off goes somewhere a person will see it: a desktop notification, ntfy/Pushover/Telegram, email; one line of what is wrong, what was tried, the next step
-- [ ] A case report a person can read in a minute (markdown), beside the full transcript
+- [x] A case report a person can read in a minute (markdown), beside the full transcript (2026-10-09: `cases/<id>.md`, rewritten with the JSON every turn)
 
 **Prove it**
 - [ ] Sim patients for macOS and Windows: what can be faithful (a Windows container or VM, a macOS VM), and a plan for the rest

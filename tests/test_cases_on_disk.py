@@ -104,3 +104,19 @@ def test_a_refused_diagnosis_gives_the_looks_back_and_a_grounded_one_is_recorded
     assert mind.kits[LOOK_BUDGET] == ["diagnose", "hand"]                  # looks spent: decide
     assert "look" in mind.kits[LOOK_BUDGET + 1]                            # refused: looks given back
     assert case.diagnosis and case.diagnosis["evidence"].startswith("-rw-r--r--") and case.ungrounded == 1
+
+
+def test_every_case_has_a_report_a_person_reads_in_a_minute(tmp_path):
+    from dbee.doctor import Case
+    c = Case(id="c-2", patient="local", wake={"kind": "unit_failed", "what": "cron.service", "evidence": "status=203/EXEC"})
+    c.looks = [{"cmd": "ls -lL /usr/sbin/cron", "code": 0, "out": "-rw-r--r-- 1 root root 60080 /usr/sbin/cron"}]
+    c.diagnosis = {"cause": "cron's binary lost its execute bit", "evidence": "-rw-r--r-- 1 root root 60080"}
+    c.cures = [{"cure": {"command": "chmod +x /usr/sbin/cron", "undo": "chmod -x /usr/sbin/cron", "verify": "systemctl is-active cron"},
+                "code": 0, "verify_code": 0}]
+    c.end, c.finding, c.mind, c.closed = "closed", "chmod +x restored it", "gemma-4-26b", c.opened + 95
+    c.save(tmp_path)
+    md = (tmp_path / "c-2.md").read_text()
+    for want in ("closed", "cron.service", "status=203/EXEC", "lost its execute bit", "`chmod +x /usr/sbin/cron`",
+                 "undo: `chmod -x /usr/sbin/cron`", "verify passed", "1 look", "gemma-4-26b", "c-2.json"):
+        assert want in md, want
+    assert len(md.splitlines()) < 40

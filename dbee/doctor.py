@@ -82,7 +82,7 @@ class Case:
     ungrounded: int = 0                                  # diagnoses refused for evidence never read
     look_limit: int = LOOK_BUDGET                        # looks before the mind is asked to decide
     snapshots: list = field(default_factory=list)        # files backed up before a cure wrote them
-    transcript: list = field(default_factory=list)                             # going round: the next turn may only decide                       # {cause, cause_removed, finding} as the mind said it
+    transcript: list = field(default_factory=list)       # the messages, as the mind saw them
     reopened_from: str = ""                              # the case this one reopens
     tokens_in: int = 0
     tokens_out: int = 0
@@ -101,7 +101,39 @@ class Case:
         tmp = p.with_suffix(".json.part")
         tmp.write_text(json.dumps(asdict(self), indent=1, default=str))
         os.replace(tmp, p)
+        md, mtmp = p.with_suffix(".md"), p.with_suffix(".md.part")
+        mtmp.write_text(self.report())
+        os.replace(mtmp, md)
         return p
+
+    def report(self) -> str:
+        """The case in a minute, for a person: what woke, what was found, what was
+        done and whether it held. The JSON beside it is the whole record."""
+        w = self.wake or {}
+        one = lambda x, n: " ".join(str(x or "").split())[:n]     # one line, for inline code
+        state = self.end or "open"
+        when = time.strftime("%Y-%m-%d %H:%M", time.localtime(self.opened))
+        took = f", {((self.closed or time.time()) - self.opened) / 60:.0f} min" if self.end else ""
+        r = [f"# {w.get('what', '?')} on {self.patient}: {state}", "",
+             f"{when}{took}; mind {self.mind or '?'}; {len(self.looks)} look{'s' if len(self.looks) != 1 else ''}, "
+             f"{len(self.cures)} cure{'s' if len(self.cures) != 1 else ''}, {self.turns} turns.", "",
+             f"**Woke by** {w.get('kind', '?')}: `{one(w.get('evidence'), 300)}`"]
+        if self.diagnosis:
+            r += ["", f"**Cause** {self.diagnosis.get('cause', '')}",
+                  f"**Seen** `{one(self.diagnosis.get('evidence'), 300)}`"]
+        for i, c in enumerate(self.cures, 1):
+            cu = c.get("cure", {})
+            v = {0: "verify passed", None: "not run"}.get(c.get("verify_code"), f"verify failed (exit {c.get('verify_code')})")
+            r += ["", f"**Cure {i}** `{cu.get('command', '')}` (exit {c.get('code', '?')}; {v})",
+                  f"undo: `{cu.get('undo', '')}`"]
+        if self.refusals:
+            r += ["", f"**Refused** {len(self.refusals)}: " + "; ".join(one(x.get("why", "").removeprefix("refused: "), 80) for x in self.refusals[-3:])]
+        if self.hand:
+            r += ["", f"**For a person** {self.hand.get('step', '')}"]
+        if self.finding:
+            r += ["", f"**Finding** {self.finding[:600]}"]
+        r += ["", f"The whole record: {self.id}.json"]
+        return "\n".join(r) + "\n"
 
 
 class Doctor:
