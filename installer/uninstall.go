@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 )
 
-// Uninstall stops and removes both services and the install root. A model
+// Uninstall removes both services (the manager's Uninstall stops each first) and the install root. A model
 // file that lives outside the root (a Hive's, or one the person kept) is never
 // touched, and neither is the Claude key file. The root is only removed when
 // it looks like a DBee install, so a mistyped --root cannot take a home folder.
@@ -21,9 +21,6 @@ func (s *Setup) Uninstall(ctx context.Context, out io.Writer) error {
 	m := s.manager()
 	var errs []error
 	for _, n := range []string{DBeeService, MindService} {
-		if err := m.Stop(ctx, n); err != nil {
-			fmt.Fprintf(out, "note: stopping %s: %v\n", n, err)
-		}
 		if err := m.Uninstall(ctx, n); err != nil {
 			errs = append(errs, fmt.Errorf("removing service %s: %w", n, err))
 			continue
