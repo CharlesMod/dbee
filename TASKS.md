@@ -66,6 +66,26 @@ stands.
 
 ---
 
+## M1b: Standalone DBee (the keeper, 2026-10-09)
+
+DBee must install and run on its own for anyone: a GUI installer, a ride-along
+model server, a private Python, recommendations from the machine's RAM and VRAM
+with impossible choices locked out. The machinery is **Wasp**
+(github.com/CharlesMod/wasp), the installer kit the Hive and DBee share: each
+stands alone, each reuses what the other installed (engines and models by
+sha256), neither requires the other.
+
+- [x] Wasp: the spec (2026-10-09)
+- [ ] Wasp phase 1: machine profile (RAM, VRAM per vendor, unified memory, WSL), GGUF facts by HTTP Range, model fit (gpu / moe-offload / partial / cpu) with lockouts and a recommendation, verified resumable downloads, the llama.cpp engine (pinned to the fleet's b11279), `wasp-look`
+- [ ] Wasp phase 2: the setup wizard kit (the Hive's pages and palette, the long-polled step runner, the window opener)
+- [ ] DBee Setup on it: Welcome → This machine → Choose a mind (recommended, fitting, locked with the reason; or a URL to a model already served; or Claude by key) → What to watch (services found on the machine) → Installing → Done
+- [ ] The ride-along model server: llama-server on loopback as a service, sized by the fit (ctx, slots, offload), restarted on failure (DBee watches its own engine too)
+- [ ] A private Python (python-build-standalone) carrying DBee, nothing touching the system Python
+- [ ] DBee itself as a service per platform, watching the chosen services
+- [ ] On a Hive machine: offer the Hive's router as the mind and reuse the Hive's engine and models; the Hive's installer reuses DBee's in turn
+- [ ] Release builds: `DBee Setup.exe` (Windows), a macOS app/dmg, a Linux AppImage or tarball; signed later
+- [ ] Wasp phase 4: the Hive's `swarm/wasp` moves onto the module (a Hive change, gated and deployed there)
+
 ## M2: Specialize for the Hive
 
 - [ ] A Hive patient: frames reached through the Hive's own doors (`hive run`, the court's API), never ssh
