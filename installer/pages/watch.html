@@ -1,0 +1,19 @@
+<style>
+.svc{display:flex;gap:8px;align-items:center;padding:3px 0;font-size:13px;max-width:520px}
+.svc input{accent-color:var(--accent)}
+.svc .st{margin-left:auto;font-size:11px;color:var(--mute)}
+.svc .st.failed{color:var(--bad)} .svc .st.running{color:var(--ok)}
+#w-list{max-height:34vh;overflow-y:auto;border:1px solid var(--line);border-radius:8px;padding:6px 10px;max-width:520px;background:var(--card)}
+</style>
+<label class="choice" style="padding:8px 14px"><input type="checkbox" id="w-whole"><b style="display:inline">The whole machine</b>
+<span style="display:block">Watch everything the system logs; no list needed.</span></label>
+<div id="w-pick">
+<label class="field" for="w-filter">Or pick services to watch</label>
+<input type="text" id="w-filter" placeholder="filter" autocomplete="off">
+<div id="w-list"></div>
+<p class="hint" id="w-count"></p>
+<label class="field" for="w-health">A health URL that should answer (optional)</label>
+<input type="text" id="w-health" placeholder="http://127.0.0.1:8080/" autocomplete="off">
+<p class="hint">Used with the services you pick; not with the whole machine.</p>
+</div>
+<p class="note" id="w-err" hidden></p>
