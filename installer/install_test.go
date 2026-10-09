@@ -441,7 +441,7 @@ func TestUninstallKeepsTheCasesUnlessPurged(t *testing.T) {
 	if !exists(c) || exists(filepath.Join(b.root, "app")) || exists(filepath.Join(b.root, "dbee.toml")) {
 		t.Fatalf("the cases stay and the rest goes:\n%s", out.String())
 	}
-	if !strings.Contains(out.String(), "kept its 1 cases") {
+	if !strings.Contains(out.String(), "kept its 1 case in") {
 		t.Fatalf("the uninstall says what it kept:\n%s", out.String())
 	}
 	s.Purge = true

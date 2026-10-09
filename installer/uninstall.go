@@ -43,7 +43,7 @@ func (s *Setup) Uninstall(ctx context.Context, out io.Writer) error {
 					errs = append(errs, err)
 				}
 			}
-			fmt.Fprintf(out, "removed DBee from %s; kept its %d cases in %s (--uninstall --purge removes them)\n", root, cases, filepath.Join(root, "home"))
+			fmt.Fprintf(out, "removed DBee from %s; kept its %d %s in %s (--uninstall --purge removes them)\n", root, cases, s.plural(cases, "case", "cases"), filepath.Join(root, "home"))
 		} else if err := os.RemoveAll(root); err != nil {
 			errs = append(errs, err)
 		} else {
