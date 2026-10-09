@@ -37,6 +37,7 @@ class Reply:
     mind: str = ""
     raw: dict | None = None
     reasoning: str = ""                              # a thinking model's reasoning, when the server returns it
+    served: dict = field(default_factory=dict)       # where it ran: a hive seat's node, url and slot
 
 
 def _secret(name: str) -> str:
@@ -266,7 +267,9 @@ class HiveMind:
                       timeout=5)
             except Exception:  # noqa: BLE001 — the engine's idle reading frees the seat then
                 pass
-        return openai_reply(out, time.time() - t0, self.name)
+        r = openai_reply(out, time.time() - t0, self.name)
+        r.served = {"node": grant.get("node", ""), "url": grant.get("url", ""), "slot": int(grant.get("slot", 0) or 0)}
+        return r
 
 
 class ClaudeMind:

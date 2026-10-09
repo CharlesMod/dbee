@@ -240,7 +240,7 @@ class Doctor:
         case.mind_s += r.seconds
         rec = {"turn": case.turns, "phase": phase, "effort": effort, "tools": [t["function"]["name"] for t in tools],
                "at": len(msgs), "seconds": round(r.seconds, 2), "tokens_in": r.tokens_in, "tokens_out": r.tokens_out,
-               "calls": r.tool_calls, "text": r.text, "reasoning": r.reasoning}
+               "calls": r.tool_calls, "text": r.text, "reasoning": r.reasoning, "served": r.served}
         if msgs is not case.transcript:
             rec["context"] = msgs[len(case.transcript):]     # a side call (a draft checked) over the transcript so far
         case.turn_log.append(rec)
