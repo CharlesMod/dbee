@@ -25,6 +25,7 @@ from .watch import UnitWatcher, HealthWatcher, LineWatcher, Wake
 
 ROOT = Path(__file__).resolve().parents[1]
 IMAGE = "localhost/dbee/patient:ubuntu24"
+_RUNS_LOCK = __import__("threading").Lock()
 
 
 def load_scenario(path: Path) -> dict:
@@ -78,7 +79,10 @@ def judge(sc: dict, case, check_code: int, check_out: str, woke_s: float | None)
     }
 
 
-def run(sc: dict, mind, *, runs_dir: Path, say=print, keep: bool = False, name: str | None = None) -> dict:
+def run(sc: dict, mind, *, runs_dir: Path, say=None, keep: bool = False, name: str | None = None) -> dict:
+    if say is None:
+        tag = sc["name"][:14]
+        say = lambda line: print(f"{tag:14} | {line}", flush=True)
     slug = re.sub(r"[^a-z0-9]+", "-", mind.name.lower()).strip("-")[-24:]
     name = name or f"dbee-{sc['name']}-{slug}-{int(time.time()) % 100000}"
     patient = Podman(name)
@@ -177,7 +181,7 @@ def run(sc: dict, mind, *, runs_dir: Path, say=print, keep: bool = False, name: 
     if not keep:
         patient.down()
     runs_dir.mkdir(parents=True, exist_ok=True)
-    with (runs_dir / "runs.jsonl").open("a") as fh:
+    with _RUNS_LOCK, (runs_dir / "runs.jsonl").open("a") as fh:
         fh.write(json.dumps({"ts": time.time(), **result}) + "\n")
     return result
 
