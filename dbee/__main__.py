@@ -102,6 +102,11 @@ def main(argv=None) -> int:
         if not picked:
             print("no scenario matches", a.pick); return 2
         jobs = a.jobs if a.jobs > 0 else len(picked)
+        from .patient import patient_room
+        room = patient_room()
+        if room is not None and jobs > room:
+            print(f"{jobs} patients at once would exhaust this user's kernel keyring quota; running {room} at once")
+            jobs = room
         if jobs > 1:
             from concurrent.futures import ThreadPoolExecutor
             with ThreadPoolExecutor(max_workers=jobs) as pool:

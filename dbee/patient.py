@@ -8,9 +8,11 @@ The doctor never knows which: looks, cures and watchers all go through
 """
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass
@@ -102,6 +104,27 @@ def _podman() -> list[str]:
     raise RuntimeError("no podman here or on the host")
 
 
+KEYS_PER_PATIENT = 6     # measured: systemd's 5 in a booted patient, plus a margin
+
+
+def key_room(key_users: str, uid: int) -> int | None:
+    """How many more patients the user's kernel keyring quota holds, from /proc/key-users
+    (``uid: usage nkeys/nikeys qnkeys/maxkeys qnbytes/maxbytes``); None when unread."""
+    for line in key_users.splitlines():
+        f = line.split()
+        if f and f[0] == f"{uid}:" and len(f) >= 5:
+            used, cap = (int(x) for x in f[3].split("/"))
+            return max(1, (cap - used) // KEYS_PER_PATIENT)
+    return None
+
+
+def patient_room() -> int | None:
+    try:
+        return key_room(Path("/proc/key-users").read_text(), os.getuid())
+    except OSError:
+        return None
+
+
 class Podman(Patient):
     def __init__(self, container: str):
         self.container = container
@@ -116,7 +139,12 @@ class Podman(Patient):
         """Start a systemd container. ``disk_mb`` gives / a small tmpfs root overlay
         bound so disk-full faults are honest and quick to seed."""
         subprocess.run([*self.pm, "rm", "-f", self.container], capture_output=True)
-        args = [*self.pm, "run", "-d", "--name", self.container, "--systemd=always",
+        # no session keyring: each container's key spends the user's kernel quota
+        # (200 keys), and a wide sim then fails with "keyctl: Disk quota exceeded"
+        conf = Path.home() / ".cache" / "dbee" / "podman-nokeyring.conf"
+        conf.parent.mkdir(parents=True, exist_ok=True)
+        conf.write_text("[containers]\nkeyring = false\n")
+        args = [*self.pm[:-1], "env", f"CONTAINERS_CONF_OVERRIDE={conf}", self.pm[-1], "run", "-d", "--name", self.container, "--systemd=always",
                 "--memory", mem, "--hostname", self.container,
                 "--tmpfs", "/tmp", "--tmpfs", "/run", "--tmpfs", "/run/lock"]
         if disk_mb:
