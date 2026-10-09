@@ -143,19 +143,35 @@ class EventWatcher(threading.Thread):
             self.plat = copy.copy(self.plat)
             self.plat.critical = pattern
         self.stop = threading.Event()
+        self.ready = threading.Event()          # subscribed: a fault from now on is seen
         self.proc = None
 
     def run(self):
         cmd = self.plat.watch_cmd(self.service)
         if not cmd:
+            self.ready.set()
             return
         self.proc = self.patient.stream(cmd)
-        for line in self.proc.stdout:
-            if self.stop.is_set():
-                break
-            ev = self.plat.parse_event(line, self.service)
-            if ev:
-                self.q.put(Wake(ev["kind"], ev["what"], evidence=ev.get("evidence", "")))
+        if not self.plat.says_ready:
+            self.ready.set()
+        tail: list[str] = []
+        try:
+            for line in self.proc.stdout:
+                if self.stop.is_set():
+                    break
+                if not self.ready.is_set() and line.strip() == '{"ready":true}':
+                    self.ready.set()
+                    continue
+                ev = self.plat.parse_event(line, self.service)
+                if ev:
+                    self.q.put(Wake(ev["kind"], ev["what"], evidence=ev.get("evidence", "")))
+                elif line.strip():
+                    tail = (tail + [line.strip()])[-5:]
+        finally:
+            self.ready.set()
+        if not self.stop.is_set():
+            # DBee is blind to this service from here; say so with what the stream said last
+            print(f"the watch on {self.service or 'the whole machine'} ended: " + " | ".join(tail)[-600:], flush=True)
 
     def end(self):
         self.stop.set()

@@ -216,3 +216,74 @@ def test_ordinary_looks_and_verifies_pass_on_every_platform():
     assert P.MACOS.check_look("launchctl print system/com.example.x") == ""
     assert P.WINDOWS.check_look("Get-Service -Name Spooler") == ""
     assert P.LINUX.check_look("systemctl restart cron") != ""
+
+
+def test_launchds_own_log_wakes_on_a_bad_exit_of_the_watched_label():
+    line = "2026-10-09 16:24:07.243869 (gui/501/com.example.web [62567]) <Notice>: exited due to exit(1), ran for 17ms"
+    ev = P.MACOS.parse_event(line, "com.example.web")
+    assert ev == {"kind": "unit_failed", "what": "com.example.web", "evidence": line}
+    assert P.MACOS.parse_event(line.replace("exit(1)", "SIGSEGV"), "com.example.web")
+    for quiet in (line.replace("exit(1)", "exit(0)"),
+                  line.replace("exit(1)", "SIGTERM | sent by launchd[1]"),
+                  line.replace("exited due to exit(1), ran for 17ms", "service state: exited"),
+                  line.replace("com.example.web", "com.other.thing")):
+        assert P.MACOS.parse_event(quiet, "com.example.web") is None, quiet
+    assert P.MACOS.parse_event(line.replace("gui/501/", "system/"), "")["what"] == "com.example.web"
+
+
+def test_the_mac_watch_follows_launchds_log_and_the_services_faults():
+    cmd = P.MACOS.watch_cmd("com.example.web")
+    assert "tail -F -n 0 /var/log/com.apple.xpc.launchd/launchd.log" in cmd
+    assert 'process == "launchd"' not in cmd and "log stream --style ndjson" in cmd
+    assert cmd.startswith("trap 'kill $a $b") and cmd.endswith("wait")
+
+
+class _Said:
+    def __init__(self, out):
+        self.out, self.code = out, 0
+
+
+class _Stub:
+    def __init__(self, out):
+        self.out = out
+
+    def run(self, cmd, timeout=0):
+        return _Said(self.out)
+
+
+@pytest.mark.parametrize("plat,out,down", [
+    (P.WINDOWS, '{"State":"Stopped","ExitCode":1053,"StartMode":"Manual"}', True),
+    (P.WINDOWS, '{"State":"Stopped","ExitCode":1077,"StartMode":"Manual"}', False),   # never started
+    (P.WINDOWS, '{"State":"Stopped","ExitCode":0,"StartMode":"Manual"}', False),
+    (P.WINDOWS, '{"State":"Running","ExitCode":0,"StartMode":"Auto"}', False),
+    (P.LINUX, "ActiveState=failed\nResult=exit-code\nType=simple\n", True),
+    (P.LINUX, "ActiveState=inactive\nResult=success\nType=simple\n", False),
+])
+def test_a_service_already_down_badly_when_the_watch_begins_wakes(plat, out, down):
+    assert bool(plat.down_at_start(_Stub(out), "web")) is down
+
+
+def test_the_windows_watch_says_when_it_is_subscribed_and_a_dead_watch_is_said(capsys):
+    import io
+    from queue import Queue
+    from dbee.watch import EventWatcher
+
+    class _Proc:
+        def __init__(self, lines):
+            self.stdout = io.StringIO("".join(lines))
+
+    class _Patient:
+        platform = P.WINDOWS
+        def __init__(self, lines):
+            self.lines = lines
+        def stream(self, cmd):
+            assert '{"ready":true}' in cmd
+            return _Proc(self.lines)
+
+    scm = json.dumps({"provider": "Service Control Manager", "id": 7000, "level": 2,
+                      "msg": "The web service failed to start", "props": ["web"]}) + "\n"
+    q = Queue()
+    w = EventWatcher(_Patient(['{"ready":true}\n', scm, "Access is denied.\n"]), q, "web")
+    w.run()
+    assert w.ready.is_set() and q.get_nowait().kind == "unit_failed"
+    assert "the watch on web ended: Access is denied." in capsys.readouterr().out

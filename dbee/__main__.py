@@ -110,7 +110,7 @@ def main(argv=None) -> int:
         return 0 if case.end in ("closed", "handed") else 1
 
     # watch: sleep until something wakes
-    from .watch import EventWatcher, HealthWatcher
+    from .watch import EventWatcher, HealthWatcher, Wake
     q: Queue = Queue()
     plan = [(a.service, a.pattern, a.health)] if (a.service or a.health or not cfg or not cfg.watches) \
         else [(w.service, w.pattern, w.health) for w in cfg.watches]
@@ -126,6 +126,12 @@ def main(argv=None) -> int:
     service = ", ".join(named)
     for x in ws:
         x.start()
+    for x in ws:
+        if isinstance(x, EventWatcher):
+            x.ready.wait()
+            said = x.service and p.platform.down_at_start(p, x.service)
+            if said:
+                q.put(Wake("unit_failed", x.service, evidence=f"already down as DBee began to watch it: {said}"))
     print(f"dbee sleeps on {p.name} ({p.platform.name}; watching {service}); mind {m.name}")
     open_cases: dict[str, float] = {}
     try:

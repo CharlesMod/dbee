@@ -76,6 +76,19 @@ class Platform:
     def watch_cmd(self, service: str = "") -> str:
         return ""
 
+    # whether watch_cmd prints {"ready":true} once it is subscribed; a stream that
+    # does not is taken as ready when it starts (journalctl -f and tail -F read from now)
+    says_ready = False
+
+    def down_at_start(self, patient, service: str) -> str:
+        """The service is already down, badly, as DBee starts to watch it: no event
+        will come for a fault that happened before the subscription. A clean stop
+        (result success, exit code 0, a Windows service never started) is not."""
+        ok, said = self.service_state(patient, service)
+        if ok or re.search(r"result success|exit code (0|1077)\b", said):
+            return ""
+        return said
+
     def parse_event(self, line: str, service: str = "") -> dict | None:
         """One line of the watcher's stream as {kind, what, evidence}, or None."""
         return None
@@ -191,14 +204,22 @@ class _MacOS(Platform):
         return mac_state(r.out)
 
     def watch_cmd(self, service=""):
+        """launchd's own log for exits (the unified log does not carry them on
+        macOS 26: `log stream --process launchd` is silent while an agent
+        crash-loops), followed by kqueue through tail -F; the unified log for the
+        service's errors and faults. Both end with this shell."""
         proc = service.rsplit(".", 1)[-1] if service else ""
         pred = ('(messageType == error OR messageType == fault)'
-                + (f' AND (process == "{proc}" OR eventMessage CONTAINS "{service}")' if service else "")
-                + ' OR (process == "launchd" AND eventMessage CONTAINS[c] "exited")')
-        return f"log stream --style ndjson --level info --predicate {shlex.quote(pred)}"
+                + (f' AND (process == "{proc}" OR eventMessage CONTAINS "{service}")' if service else ""))
+        stream = f"log stream --style ndjson --level info --predicate {shlex.quote(pred)}"
+        return (f"trap 'kill $a $b 2>/dev/null' EXIT INT TERM; a=; "
+                f"if [ -r {LAUNCHD_LOG} ]; then tail -F -n 0 {LAUNCHD_LOG} & a=$!; fi; "
+                f"{stream} & b=$!; wait")
 
     def parse_event(self, line, service=""):
-        return mac_event(line, service, self.critical)
+        if line.lstrip().startswith("{"):
+            return mac_event(line, service, self.critical)
+        return launchd_log_event(line, service)
 
     def what_changed(self):
         return ("find /etc /Library/LaunchDaemons /Library/LaunchAgents /usr/local/etc /opt/homebrew/etc "
@@ -214,6 +235,25 @@ def mac_state(out: str) -> tuple[bool, str]:
     code = last.group(1).strip() if last else "?"
     ok = s == "running" or (not pid and code == "0")
     return ok, f"{s} (last exit code {code})"
+
+
+LAUNCHD_LOG = "/var/log/com.apple.xpc.launchd/launchd.log"
+# 2026-10-09 16:23:20.062499 (gui/501/com.example.web [62472]) <Notice>: exited due to exit(2), ran for 45ms
+_LAUNCHD_LINE = re.compile(r"\((?:[\w.-]+/)*([\w.-]+) \[\d+\]\) <\w+>: (.*)$")
+
+
+def launchd_log_event(line: str, service: str) -> dict | None:
+    """A line of launchd's own log: a job that exited badly wakes; a clean exit, or
+    a stop launchd itself sent (bootout, kickstart -k), does not."""
+    m = _LAUNCHD_LINE.search(line.strip())
+    if not m:
+        return None
+    label, msg = m.groups()
+    if not _LAUNCHD_EXIT.search(msg) or re.search(r"due to exit\(0\)|sent by launchd", msg):
+        return None
+    if service and service not in (label, label.rsplit(".", 1)[-1]):
+        return None
+    return {"kind": "unit_failed", "what": label, "evidence": line.strip()}
 
 
 _LAUNCHD_EXIT = re.compile(r"(?:exited due to |exited with exit code[: ]|exited abnormally|Service exited)", re.I)
@@ -402,6 +442,8 @@ class _Windows(Platform):
         r = patient.run(f"Get-CimInstance Win32_Service -Filter \"Name='{service}'\" | Select-Object State,ExitCode,StartMode | ConvertTo-Json -Compress", timeout=20)
         return win_state(r.out)
 
+    says_ready = True
+
     def watch_cmd(self, service=""):
         return WIN_WATCH.replace("__SERVICE__", service.replace("'", "''"))
 
@@ -436,6 +478,7 @@ foreach ($log in 'System','Application') {
   Register-ObjectEvent -InputObject $w -EventName EventRecordWritten -SourceIdentifier "dbee-$log" | Out-Null
   $w.Enabled = $true; $ws += $w
 }
+'{"ready":true}'
 while ($true) {
   $e = Wait-Event
   $r = $e.SourceEventArgs.EventRecord
