@@ -3,6 +3,34 @@
 What the simulator has taught about driving each mind. Newest first. A row is
 one run; the record is under `runs/<scenario>/<mind>/cases/`.
 
+## 2026-10-09 — the wizard path, driven through
+
+DBee Setup's window, not `--yes`: on Linux the pages were clicked in a browser
+(a throwaway systemd container capped at 6 GB and 4 CPUs, the Hive's router as
+the mind, cron watched); on macOS and Windows the wizard's own server was
+driven over its API from a job on the frame (the same pages, checks and runner
+the window's script calls).
+
+- **Linux, 26B through the Hive.** Woke on `chmod -x /usr/sbin/cron`. First run:
+  the image has no `file`, the opening's `file -b` was exit 127, and the 26B
+  guessed the binary had been "overwritten by a text file" and handed off a
+  reinstall. The harness hid the fact: the first looks now read the program's
+  first four bytes (`head -c 4 | od -c`: ELF, `#!`). Rerun on the same fault:
+  diagnosed `-rw-r--r--`, cured `chmod +x`, verified, closed in 2 min. The
+  harness, not the model.
+- **macOS, the local 4B on Metal.** Installed through the wizard (Python, the
+  engine, the model fetched and verified, two LaunchAgents), woke on the test
+  agent's mode-000 config, diagnosed it, `chmod 644`, closed in 4 min.
+- **The pages.** The machine page showed the host's 31 GB and 20 cores inside
+  the 6 GB, 4-CPU container (Wasp now reads the cgroup's `memory.max` and
+  `cpu.max`); it said "No Hive found" while the mind page offered the Hive's
+  minds (a court reached from here is a Hive); Ready did not name the services;
+  Done pointed at a folder per case (a file per case); the welcome said both
+  "never sleeps" and "sleeps on this machine". All fixed.
+- **Uninstall** said "removed service" for services never installed, and
+  "1 cases". Fixed. Every run's uninstall kept the cases and `--purge` left
+  nothing: no folder, no unit or agent, no process.
+
 ## 2026-10-09 — the installer driven through on three machines: what hid the faults
 
 The end-to-end runs (DBee Setup installs, a real fault, a case, an uninstall)
