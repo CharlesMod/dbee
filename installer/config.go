@@ -85,6 +85,7 @@ func (c Config) TOML() string {
 		b.WriteString("\n")
 	}
 	b.WriteString("[doctor]\nhome = " + tomlStr(c.Home) + "\n")
+	b.WriteString("\n# a case handed to a person reaches them; uncomment one\n# [notify]\n# url = \"https://ntfy.sh/<your-topic>\"\n# command = [\"/path/to/tell-me\"]   # the report on stdin\n")
 	return b.String()
 }
 

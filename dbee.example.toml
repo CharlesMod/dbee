@@ -20,3 +20,9 @@ health = "http://127.0.0.1:8080/"
 
 [doctor]
 home = "~/.dbee"
+case_hours = 3                 # a case works until this bound, then is handed to a person
+
+# [notify]                     # a case handed to a person reaches them
+# url = "https://ntfy.sh/<your-topic>"    # a POST of the report, with a Title
+# command = ["/usr/local/bin/tell-me"]     # or run this with the report on stdin
+# on = ["handed", "closed"]                # which ends to say (handed only, by default)

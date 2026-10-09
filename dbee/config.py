@@ -17,6 +17,10 @@ whole machine with the mind named by --mind).
     [[watch]]
     health = "http://127.0.0.1:8080/"   # optional: a URL that must answer
 
+    [notify]                      # a case handed to a person reaches them (dbee/notify.py)
+    url = "https://ntfy.sh/my-dbee-topic"
+    command = ["/usr/local/bin/tell-me"]   # the report on stdin
+
     [doctor]
     home = "~/.dbee"              # cases, casebook, transcripts
     case_hours = 3                # a case works until this wall-clock bound, then is handed to a person
@@ -45,6 +49,9 @@ class Config:
     watches: list[Watch] = field(default_factory=list)
     home: Path = Path.home() / ".dbee"
     case_hours: float = 0.0
+    notify_url: str = ""
+    notify_cmd: list[str] = field(default_factory=list)
+    notify_on: list[str] = field(default_factory=list)
     path: Path | None = None
 
 
@@ -62,10 +69,15 @@ def load(path: str | os.PathLike) -> Config:
         watches.append(Watch(service=str(w.get("service", "")), pattern=str(w.get("pattern", "")),
                              health=str(w.get("health", ""))))
     doc = d.get("doctor") or {}
+    n = d.get("notify") or {}
+    cmd = n.get("command") or []
+    if isinstance(cmd, str) or not all(isinstance(x, str) for x in cmd):
+        raise ValueError(f"{p}: [notify] command is a list, like [\"/usr/local/bin/tell-me\", \"--urgent\"]")
     return Config(mind=str(m.get("spec", "")), court=str(m.get("court", "")), max_tokens=int(m.get("max_tokens", 0) or 0),
                   effort={str(k): str(v) for k, v in eff.items()}, watches=watches,
                   home=Path(str(doc.get("home", "~/.dbee"))).expanduser(),
-                  case_hours=float(doc.get("case_hours", 0) or 0), path=p)
+                  case_hours=float(doc.get("case_hours", 0) or 0), notify_url=str(n.get("url", "")),
+                  notify_cmd=list(cmd), notify_on=[str(x) for x in n.get("on") or []], path=p)
 
 
 def apply_env(cfg: Config) -> None:

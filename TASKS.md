@@ -56,7 +56,7 @@ stands.
 - [ ] Per-phase reasoning effort for thinking models (2026-10-09 for the Hive; to generalize)
 
 **Reach the human**
-- [ ] A hand-off goes somewhere a person will see it: a desktop notification, ntfy/Pushover/Telegram, email; one line of what is wrong, what was tried, the next step
+- [x] A hand-off goes somewhere a person will see it (2026-10-09: `[notify] url` POSTs the report with a Title, ntfy-style; `[notify] command` gets it on stdin for mail, Telegram or a toast; a failed send is logged, never raised)
 - [x] A case report a person can read in a minute (markdown), beside the full transcript (2026-10-09: `cases/<id>.md`, rewritten with the JSON every turn)
 
 **Prove it**
