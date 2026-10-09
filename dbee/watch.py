@@ -251,3 +251,86 @@ class EventWatcher(threading.Thread):
                 self.proc.terminate()
             except Exception:
                 pass
+
+
+# ---------------------------------------------------------------- the Hive's spine
+
+REFUSED_RUN = 3              # an organ refused this many times running, nothing served between: a loop
+
+
+class SpineRules:
+    """The Hive's spine (`/v1/events`) read into wakes, by the Hive doctor's own
+    rules: a frame dropped (or the court's own outage, filed as it starts
+    again), an organ refusing in a loop, a pin refused, a job quarantined."""
+
+    def __init__(self):
+        self.runs: dict[tuple[str, str], int] = {}
+
+    def feed(self, e: dict) -> list[Wake]:
+        name, node = str(e.get("event") or ""), str(e.get("node") or "")
+        at = float(e.get("ts") or time.time())
+        line = json.dumps(e, sort_keys=True)[:600]
+        if name == "node_dropped":
+            kind = "court_outage" if e.get("cause") == "court_outage" else "node_lost"
+            return [Wake(kind, node or "?", at=at, evidence=line)]
+        if name == "pin_refused":
+            return [Wake("pin_refused", node or "?", at=at, evidence=line)]
+        if name == "poison" and e.get("outcome") == "quarantined":
+            return [Wake("quarantined", node or str(e.get("job_id") or "?"), at=at, evidence=line)]
+        if name.startswith("organ_"):
+            detail = e.get("detail") if isinstance(e.get("detail"), dict) else {}
+            key = (node, str(e.get("organ") or detail.get("organ") or ""))
+            if not all(key):
+                return []
+            if name == "organ_refused":
+                self.runs[key] = self.runs.get(key, 0) + 1
+                if self.runs[key] == REFUSED_RUN:
+                    return [Wake("organ_refused", f"{key[0]}/{key[1]}", at=at, evidence=line)]
+            elif name in ("organ_served", "organ_registered", "organ_released"):
+                self.runs.pop(key, None)
+        return []
+
+
+class SpineWatcher(threading.Thread):
+    """Follows the court's spine: it starts at the tail (history is not news) and
+    long-polls `?since=CURSOR&wait=S`, which the court answers as events land.
+    The one timer is a watchdog for silence: a court that has not answered for
+    ``dark_s`` wakes ``court_silent`` once, and again only after it answered."""
+
+    def __init__(self, court: str, q: Queue, *, wait_s: float = 60, dark_s: float = 90, backoff_s: float = 5):
+        super().__init__(daemon=True)
+        self.court, self.q = court.rstrip("/"), q
+        self.wait_s, self.dark_s, self.backoff_s = wait_s, dark_s, backoff_s
+        self.rules = SpineRules()
+        self.stop = threading.Event()
+
+    def _get(self, query: str) -> dict:
+        import urllib.request
+        with urllib.request.urlopen(f"{self.court}/v1/events?{query}", timeout=self.wait_s + 15) as r:
+            return json.loads(r.read())
+
+    def run(self):
+        cursor, answered, said_dark = None, time.time(), False
+        while not self.stop.is_set():
+            try:
+                if cursor is None:
+                    cursor = int(self._get("tail=1").get("cursor") or 0)
+                    body = {"events": [], "cursor": cursor}
+                else:
+                    body = self._get(f"since={cursor}&wait={self.wait_s:g}&limit=500")
+            except (OSError, ValueError) as e:
+                if not said_dark and time.time() - answered >= self.dark_s:
+                    said_dark = True
+                    self.q.put(Wake("court_silent", self.court,
+                                    evidence=f"the court has not answered for {time.time() - answered:.0f}s: {e}"))
+                self.stop.wait(self.backoff_s)       # backoff while the other side is down
+                continue
+            answered, said_dark = time.time(), False
+            for e in body.get("events") or ():
+                if isinstance(e, dict):
+                    for wk in self.rules.feed(e):
+                        self.q.put(wk)
+            cursor = int(body.get("cursor") or cursor)
+
+    def end(self):
+        self.stop.set()

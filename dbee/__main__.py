@@ -54,6 +54,7 @@ def main(argv=None) -> int:
     c = sub.add_parser("check"); c.add_argument("cmd")
     ex = sub.add_parser("export", help="every case as JSON lines for training (messages, tools, each turn's kit, the outcome)"); ex.add_argument("--config", default=os.environ.get("DBEE_CONFIG", ""), help="a dbee.toml naming the doctor's home"); ex.add_argument("--home", default="", help="the doctor's home (cases/); the config's or ~/.dbee otherwise"); ex.add_argument("--out", default="-", help="a file; - is stdout"); ex.add_argument("--won", action="store_true", help="only cases closed with a verify that passed")
     v = sub.add_parser("validate"); v.add_argument("pick", nargs="?", default="all")
+    sp = sub.add_parser("spine", help="follow a Hive's spine and print what would wake DBee (reads only)"); sp.add_argument("--court", default=os.environ.get("DBEE_COURT", ""), help="the Hive's court, e.g. http://queen:4410")
     a = ap.parse_args(argv)
 
     if a.verb == "export":
@@ -72,6 +73,20 @@ def main(argv=None) -> int:
         print("cure:", cures.check_cure(a.cmd) or "allowed")
         return 0
 
+    if a.verb == "spine":
+        if not a.court:
+            print("dbee spine: name the court (--court or DBEE_COURT)"); return 2
+        from queue import Queue
+        from .watch import SpineWatcher
+        q: Queue = Queue()
+        SpineWatcher(a.court, q).start()
+        print(f"following {a.court}'s spine from its tail", flush=True)
+        try:
+            while True:
+                wk = q.get()
+                print(f"{time.strftime('%H:%M:%S', time.localtime(wk.at))} {wk.key}: {wk.evidence[:300]}", flush=True)
+        except KeyboardInterrupt:
+            return 0
     if a.verb == "validate":
         from . import sim
         res = [sim.validate(sc) for sc in sim.scenarios(ROOT / "scenarios", None if a.pick == "all" else a.pick)]
@@ -93,7 +108,11 @@ def main(argv=None) -> int:
         if cfg.court and not a.court:
             a.court = cfg.court
         globals()["HOME"] = cfg.home
-    m = make_mind(a.mind, court=a.court, seat=a.seat, wait_s=a.wait)
+    if cfg:
+        from .minds import from_config
+        m = from_config(cfg, a.mind, court=a.court, seat=a.seat, wait_s=a.wait)
+    else:
+        m = make_mind(a.mind, court=a.court, seat=a.seat, wait_s=a.wait)
     runbook = Runbook.load(ROOT / "assets" / "runbook.jsonl")
 
     if a.verb == "sim":
@@ -162,7 +181,11 @@ def main(argv=None) -> int:
             wk = q.get()
             if not fold.admit(wk):
                 continue                                   # raised while its case was worked: that case's
-            case = doc.treat(wk)
+            try:
+                case = doc.treat(wk)
+            finally:
+                if hasattr(m, "rest"):
+                    m.rest()                               # the bundled engine, if it was needed, goes with the case
             fold.ended(wk, time.time())
             if cfg:
                 for said in notify(cfg, case):

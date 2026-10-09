@@ -468,3 +468,26 @@ func TestUninstallSaysOnlyWhatItRemoved(t *testing.T) {
 		t.Fatalf("an installed service is said removed: %v\n%s", err, out.String())
 	}
 }
+
+func TestTheHivesMindKeepsABundledEngineForWhenTheHiveCannotAnswer(t *testing.T) {
+	b := newBox(t)
+	s := b.setup(cpuOnly8GB, func(s *Setup) { s.Hive = Hive{Here: true, Court: "http://court.invalid:4410"} })
+	out, err := install(t, s, wizard.Answers{"mind_kind": "hive", "whole_machine": true})
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	toml := readFile(t, filepath.Join(b.root, "dbee.toml"))
+	if !strings.Contains(toml, "[mind.fallback]") || !strings.Contains(toml, filepath.Join(b.root, "models", "tiny.gguf")) {
+		t.Fatalf("the fallback is named in dbee.toml:\n%s", toml)
+	}
+	st := s.readState()
+	if !strings.Contains(st.Engine, "-cpu") {
+		t.Fatalf("the fallback engine is the CPU build (a CUDA build takes VRAM even at -ngl 0): %s", st.Engine)
+	}
+	if b.ran("dbee-mind") {
+		t.Fatal("the fallback engine is started by DBee when it is needed, never a standing service")
+	}
+	if strings.Index(toml, "[mind.fallback]") > strings.Index(toml, "[doctor]") {
+		t.Fatalf("[mind.fallback] sits with [mind]:\n%s", toml)
+	}
+}

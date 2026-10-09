@@ -78,6 +78,12 @@ func (s *Setup) Plan(a wizard.Answers) ([]wizard.Stage, error) {
 			wizard.Stage{Name: "The engine", Run: s.stageEngine},
 			wizard.Stage{Name: "The model", Run: s.stageModel(ch)})
 	}
+	if e, ok := s.fallback(ch); ok {
+		// for when no Hive mind is usable: DBee starts it on demand, CPU only
+		stages = append(stages,
+			wizard.Stage{Name: "The fallback engine", Run: s.stageEngineOf(engine.CPU)},
+			wizard.Stage{Name: "The fallback model", Run: s.stageModel(choice{Kind: KindLocal, Entry: e})})
+	}
 	stages = append(stages,
 		wizard.Stage{Name: "Configuration", Run: s.stageConfig(ch)},
 		wizard.Stage{Name: "Services", Run: s.stageServices(ch)},
@@ -150,7 +156,15 @@ func (s *Setup) engineRoots() []string {
 }
 
 func (s *Setup) stageEngine(ctx context.Context, step *wizard.Step) error {
-	flavor := engine.DetectFlavor(s.Profile)
+	return s.stageEngineOf(engine.DetectFlavor(s.Profile))(ctx, step)
+}
+
+// stageEngineOf installs (or reuses) one build of the engine.
+func (s *Setup) stageEngineOf(flavor engine.Flavor) func(context.Context, *wizard.Step) error {
+	return func(ctx context.Context, step *wizard.Step) error { return s.installEngine(ctx, step, flavor) }
+}
+
+func (s *Setup) installEngine(ctx context.Context, step *wizard.Step, flavor engine.Flavor) error {
 	if rec, ok := engine.Find(engine.LlamaTag, flavor, s.engineRoots()...); ok {
 		step.Sayf("an engine is already here (llama.cpp %s, %s); reusing it", rec.Tag, rec.Flavor)
 		if err := s.probeEngine(ctx, rec.Server); err != nil {
@@ -243,6 +257,11 @@ func (s *Setup) config(ch choice, port int) Config {
 	cfg := Config{Spec: ch.Spec(port), Home: filepath.Join(s.Root, "home")}
 	if ch.Kind == KindHive {
 		cfg.Court = ch.URL
+		if e, ok := s.fallback(ch); ok {
+			if st := s.readState(); st.Engine != "" && st.Model != "" {
+				cfg.Fallback = &Fallback{Engine: st.Engine, Model: st.Model, Label: e.Name, Ctx: 8192}
+			}
+		}
 	}
 	if ch.Kind == KindLocal && (thinking[ch.Entry.Name] || ch.Entry.Reasoning == "effort") {
 		cfg.Effort = map[string]string{"triage": "low", "diagnose": "medium", "treat": "medium"}
@@ -382,10 +401,15 @@ func (s *Setup) stageCheck(ch choice) func(context.Context, *wizard.Step) error 
 		}
 		cctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 		defer cancel()
-		if out, err := run(cctx, env, st.Python, "-c", pyProbe, filepath.Join(s.Root, "dbee.toml")); err != nil {
+		out, err := run(cctx, env, st.Python, "-c", pyProbe, filepath.Join(s.Root, "dbee.toml"))
+		if err != nil {
 			return fmt.Errorf("DBee could not reach its mind: %s", lastLines(string(out), err))
 		}
-		step.Say("DBee spoke to its mind")
+		if strings.Contains(string(out), "answered-by local:") {
+			step.Say("the Hive's mind did not answer; DBee spoke to its own engine instead, and will ask the Hive first on every case")
+		} else {
+			step.Say("DBee spoke to its mind")
+		}
 		names := []string{DBeeService}
 		if ch.Kind == KindLocal {
 			names = []string{MindService, DBeeService}
@@ -400,11 +424,18 @@ func (s *Setup) stageCheck(ch choice) func(context.Context, *wizard.Step) error 
 	}
 }
 
+// pyProbe builds the mind exactly as DBee's service will (the fallback behind a
+// Hive mind included) and says which one answered.
 const pyProbe = `import sys
 from dbee import config, minds
 c = config.load(sys.argv[1]); config.apply_env(c)
-r = minds.mind(c.mind, wait_s=30).chat([{"role": "user", "content": "Reply with the word ready."}], max_tokens=64)
-print("ok", (r.text or "")[:40])`
+m = minds.from_config(c, wait_s=30)
+if hasattr(m, "say"): m.say = lambda s: None
+try:
+    r = m.chat([{"role": "user", "content": "Reply with the word ready."}], max_tokens=64)
+finally:
+    getattr(m, "rest", lambda: None)()
+print("answered-by", r.mind)`
 
 func lastLines(out string, err error) string {
 	lines := strings.Split(strings.TrimSpace(out), "\n")

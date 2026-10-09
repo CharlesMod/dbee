@@ -40,11 +40,19 @@ func tomlStr(s string) string {
 
 // Config is what dbee.toml says.
 type Config struct {
-	Spec    string
-	Court   string
-	Effort  map[string]string // phase -> effort, thinking models only
-	Watches []Watch
-	Home    string
+	Spec     string
+	Court    string
+	Effort   map[string]string // phase -> effort, thinking models only
+	Watches  []Watch
+	Home     string
+	Fallback *Fallback // the bundled engine, for when no Hive mind is usable
+}
+
+// Fallback is [mind.fallback]: DBee's own engine and a small model, started on
+// demand on the CPU only when the Hive's minds cannot answer.
+type Fallback struct {
+	Engine, Model, Label string
+	Ctx                  int
 }
 
 // Watch is one [[watch]] table.
@@ -72,6 +80,11 @@ func (c Config) TOML() string {
 	if c.Court != "" {
 		b.WriteString("# the Hive's router; the launcher and the service export it as DBEE_COURT\n")
 		b.WriteString("court = " + tomlStr(c.Court) + "\n")
+	}
+	if f := c.Fallback; f != nil {
+		b.WriteString("\n# DBee's own engine, for when no Hive mind can answer: started on the CPU when needed, stopped after the case\n")
+		b.WriteString("[mind.fallback]\nengine = " + tomlStr(f.Engine) + "\nmodel = " + tomlStr(f.Model) + "\n")
+		b.WriteString("label = " + tomlStr(f.Label) + "\nctx = " + strconv.Itoa(f.Ctx) + "\n")
 	}
 	b.WriteString("\n# one table per service; with none, DBee watches the whole machine\n")
 	for _, w := range c.Watches {

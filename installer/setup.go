@@ -317,6 +317,28 @@ func orDefault(s, d string) string {
 func gbText(n int64) string { return fmt.Sprintf("%.1f GB", float64(n)/1e9) }
 
 // need is a rough size, in bytes, of what the install will add to the disk.
+// fallback is the model DBee keeps beside a Hive mind, for when the Hive cannot
+// answer: the smallest the catalog has that runs on this machine's CPU, so it
+// takes the least RAM on the rare occasion it runs.
+func (s *Setup) fallback(c choice) (catalog.Entry, bool) {
+	if c.Kind != KindHive {
+		return catalog.Entry{}, false
+	}
+	var best catalog.Entry
+	found := false
+	for _, v := range s.recommendation().Verdicts {
+		if v.Unknown {
+			continue
+		}
+		for _, sh := range v.Shapes {
+			if sh.Kind == fit.CPU && sh.Fits && (!found || v.Entry.Bytes < best.Bytes) {
+				best, found = v.Entry, true
+			}
+		}
+	}
+	return best, found
+}
+
 func (s *Setup) need(c choice) (int64, []string) {
 	const mb = 1 << 20
 	var items []string
@@ -336,6 +358,17 @@ func (s *Setup) need(c choice) (int64, []string) {
 			total += c.Entry.Bytes
 			items = append(items, c.Entry.Label+" ("+gbText(c.Entry.Bytes)+" download)")
 		}
+	}
+	if e, ok := s.fallback(c); ok {
+		total += 200 * mb
+		line := "for when the Hive cannot answer: llama.cpp " + engine.LlamaTag + " (CPU build) and " + e.Label
+		if s.alreadyHere(e) != "" {
+			line += ", already on this machine"
+		} else {
+			total += e.Bytes
+			line += " (" + gbText(e.Bytes) + " download)"
+		}
+		items = append(items, line+"; DBee starts it only then")
 	}
 	return total, items
 }

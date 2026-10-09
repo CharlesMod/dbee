@@ -17,6 +17,7 @@ from __future__ import annotations
 import http.client
 import json
 import os
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -354,6 +355,114 @@ class ClaudeMind:
                      seconds=time.time() - t0, mind=self.name, raw=out)
 
 
+class LocalEngine:
+    """DBee's own bundled engine (llama-server), kept for when no Hive mind is usable:
+    started on demand on loopback with no layers on any card (``-ngl 0``: a Hive
+    frame's cards are the Hive's), ready when it says it is listening, stopped when
+    the case ends. ``server`` is the program (or an argv head)."""
+
+    READY_S = 600                     # a cold model read from a slow disk, at most
+
+    def __init__(self, server, model: str, *, label: str = "", ctx: int = 8192, threads: int = 0,
+                 extra: list[str] | None = None, log=None):
+        self.head = list(server) if isinstance(server, (list, tuple)) else [server]
+        self.model, self.ctx, self.threads = model, ctx, threads
+        self.label = label or os.path.splitext(os.path.basename(model))[0]
+        self.extra, self.log = list(extra or []), log
+        self.proc, self.port = None, 0
+
+    def running(self) -> bool:
+        return self.proc is not None and self.proc.poll() is None
+
+    def start(self) -> None:
+        if self.running():
+            return
+        import socket
+        import subprocess
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            self.port = s.getsockname()[1]
+        argv = [*self.head, "-m", self.model, "--host", "127.0.0.1", "--port", str(self.port),
+                "-c", str(self.ctx), "-ngl", "0", "--jinja",
+                *(["-t", str(self.threads)] if self.threads else []), *self.extra]
+        # no card at all, even for a GPU build named by hand: a Hive frame's cards are the Hive's
+        env = {**os.environ, "CUDA_VISIBLE_DEVICES": "", "HIP_VISIBLE_DEVICES": "", "GGML_VK_VISIBLE_DEVICES": ""}
+        self.proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                                     errors="replace", env=env)
+        # ready is the engine's own word ("server is listening"), read as it is said;
+        # the log keeps every line for a person
+        seen: list[str] = []
+        ready = threading.Event()
+
+        def pump():
+            fh = open(self.log, "a") if self.log else None
+            try:
+                for line in self.proc.stdout:
+                    if fh:
+                        fh.write(line); fh.flush()
+                    seen.append(line.rstrip()); del seen[:-20]
+                    if "listening" in line:
+                        ready.set()
+            finally:
+                ready.set()
+                if fh:
+                    fh.close()
+        threading.Thread(target=pump, daemon=True).start()
+        ready.wait(self.READY_S)
+        if not self.running() or not any("listening" in x for x in seen):
+            self.stop()
+            raise RuntimeError("DBee's own engine did not start: " + " | ".join(seen[-5:]))
+
+    def mind(self) -> "OpenAIMind":
+        m = OpenAIMind(f"http://127.0.0.1:{self.port}/v1", model=self.label, wait_s=60)
+        m.name = f"local:{self.label}"
+        return m
+
+    def stop(self) -> None:
+        p, self.proc = self.proc, None
+        if p is None or p.poll() is not None:
+            return                    # never signal a reaped pid
+        p.terminate()
+        try:
+            p.wait(15)
+        except Exception:  # noqa: BLE001
+            p.kill()
+            p.wait(5)
+
+
+class FallbackMind:
+    """The Hive's mind first; DBee's own engine when the Hive cannot answer (no seat
+    within the mind's wait, or the court unreachable). Once fallen back, the rest of
+    the case stays on the engine; ``rest()`` at the case's end stops it, and the
+    next case asks the Hive again. A refusal that is the caller's own fault (an HTTP
+    4xx) is raised, never hidden behind the engine."""
+
+    def __init__(self, primary, local: LocalEngine, *, say=print):
+        self.primary, self.local, self.say = primary, local, say
+        self.name = primary.name
+        self.fell_back = False
+
+    def chat(self, messages, tools=None, **kw) -> Reply:
+        if not self.fell_back:
+            try:
+                return self.primary.chat(messages, tools, **kw)
+            except urllib.error.HTTPError as e:
+                if e.code < 500:
+                    raise
+                why = e
+            except (RuntimeError, OSError, http.client.HTTPException) as e:
+                why = e
+            self.say(f"   no Hive mind is usable ({str(why)[:160]}); thinking with DBee's own engine, "
+                     f"{self.local.label}, on the CPU")
+            self.local.start()
+            self.fell_back = True
+        return self.local.mind().chat(messages, tools, **kw)
+
+    def rest(self) -> None:
+        self.fell_back = False
+        self.local.stop()
+
+
 def mind(spec: str, *, court: str = "", seat: str = "background", wait_s: float = 120) -> HiveMind | ClaudeMind:
     """``claude[:model]`` or a hive model name (``gemma-4-26b-a4b-iq3s``); ``seat`` is
     the router's call class (a frame keeps some seats for some classes: a 4 GB
@@ -373,6 +482,21 @@ def mind(spec: str, *, court: str = "", seat: str = "background", wait_s: float 
     if not court:
         raise RuntimeError("a hive mind needs the court's address (--court, DBEE_COURT or [mind] court)")
     return HiveMind(court, spec, cls=seat, wait_s=wait_s)
+
+
+def from_config(cfg, spec: str = "", *, court: str = "", seat: str = "background", wait_s: float = 120):
+    """The mind a dbee.toml describes, the one way `dbee watch` and the installer's
+    check both build it: its spec, with DBee's own engine behind it when the
+    config names a fallback."""
+    m = mind(spec or cfg.mind, court=court or cfg.court, seat=seat, wait_s=wait_s)
+    fb = getattr(cfg, "fallback", None)
+    if not fb:
+        return m
+    logs = cfg.home.parent / "logs"
+    return FallbackMind(m, LocalEngine(os.path.expanduser(fb["engine"]), os.path.expanduser(fb["model"]),
+                                       label=fb.get("label", ""), ctx=int(fb.get("ctx", 8192)),
+                                       threads=int(fb.get("threads", 0)),
+                                       log=logs / "fallback.log" if logs.is_dir() else None))
 
 
 class FileMind:

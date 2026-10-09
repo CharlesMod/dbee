@@ -10,6 +10,12 @@ whole machine with the mind named by --mind).
     max_tokens = 1024
     effort = { triage = "low", diagnose = "medium", treat = "medium" }   # thinking models only
 
+    [mind.fallback]               # DBee's own engine, for when no Hive mind is usable (the installer lays it)
+    engine = "~/.dbee/engine/llama-server"   # started on demand, CPU only, stopped when the case ends
+    model = "~/.dbee/models/qwen3.5-4b-iq4xs.gguf"
+    label = "qwen3.5-4b-iq4xs"
+    ctx = 8192
+
     [[watch]]                     # one table per service; none means the whole machine
     service = "nginx"             # a systemd unit, a launchd label, a Windows service
     pattern = "emerg|crit"        # optional: what a critical line looks like (the platform's default otherwise)
@@ -57,6 +63,7 @@ class Config:
     notify_url: str = ""
     notify_cmd: list[str] = field(default_factory=list)
     notify_on: list[str] = field(default_factory=list)
+    fallback: dict = field(default_factory=dict)
     path: Path | None = None
 
 
@@ -82,7 +89,16 @@ def load(path: str | os.PathLike) -> Config:
                   effort={str(k): str(v) for k, v in eff.items()}, watches=watches,
                   home=Path(str(doc.get("home", "~/.dbee"))).expanduser(),
                   case_hours=float(doc.get("case_hours", 0) or 0), notify_url=str(n.get("url", "")),
-                  notify_cmd=list(cmd), notify_on=[str(x) for x in n.get("on") or []], path=p)
+                  notify_cmd=list(cmd), notify_on=[str(x) for x in n.get("on") or []],
+                  fallback=_fallback(p, m.get("fallback")), path=p)
+
+
+def _fallback(p: Path, fb) -> dict:
+    if not fb:
+        return {}
+    if not isinstance(fb, dict) or not (fb.get("engine") and fb.get("model")):
+        raise ValueError(f"{p}: [mind.fallback] names its engine and its model")
+    return {k: fb[k] for k in ("engine", "model", "label", "ctx", "threads") if k in fb}
 
 
 def apply_env(cfg: Config) -> None:
