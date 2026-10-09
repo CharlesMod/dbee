@@ -287,3 +287,14 @@ def test_the_windows_watch_says_when_it_is_subscribed_and_a_dead_watch_is_said(c
     w.run()
     assert w.ready.is_set() and q.get_nowait().kind == "unit_failed"
     assert "the watch on web ended: Access is denied." in capsys.readouterr().out
+
+
+def test_an_scm_event_naming_the_service_by_its_display_name_wakes():
+    line = json.dumps({"display": "DBee e2e patient", "provider": "Service Control Manager", "id": 7000, "level": 2,
+                       "msg": "The DBee e2e patient service failed to start due to the following error: ...",
+                       "props": ["DBee e2e patient", "%%1053"]})
+    ev = P.WINDOWS.parse_event(line, "DBeeE2EPatient")
+    assert ev and ev["kind"] == "unit_failed" and ev["what"] == "DBeeE2EPatient"
+    other = json.loads(line); other["msg"] = other["msg"].replace("DBee e2e patient", "Print Spooler"); other["props"] = ["Print Spooler"]
+    assert P.WINDOWS.parse_event(json.dumps(other), "DBeeE2EPatient") is None
+    assert "(Get-Service -Name $svc" in P.WINDOWS.watch_cmd("DBeeE2EPatient")

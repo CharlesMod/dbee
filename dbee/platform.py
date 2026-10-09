@@ -471,6 +471,8 @@ def win_state(out: str) -> tuple[bool, str]:
 WIN_WATCH = r"""
 $ErrorActionPreference = 'Stop'
 $svc = '__SERVICE__'
+# the Service Control Manager's messages name a service by its display name
+$dn = if ($svc) { try { (Get-Service -Name $svc -ErrorAction Stop).DisplayName } catch { $svc } } else { '' }
 $q = "*[System[(Level=1 or Level=2) or (Provider[@Name='Service Control Manager'] and (EventID=7031 or EventID=7034 or EventID=7023 or EventID=7024 or EventID=7000 or EventID=7009))]]"
 $ws = @()
 foreach ($log in 'System','Application') {
@@ -484,7 +486,7 @@ while ($true) {
   $r = $e.SourceEventArgs.EventRecord
   if ($r) {
     $m = try { $r.FormatDescription() } catch { '' }
-    [pscustomobject]@{ log = $r.LogName; provider = $r.ProviderName; id = $r.Id; level = $r.Level; msg = $m; props = @($r.Properties | ForEach-Object { "$($_.Value)" }) } | ConvertTo-Json -Compress
+    [pscustomobject]@{ display = $dn; log = $r.LogName; provider = $r.ProviderName; id = $r.Id; level = $r.Level; msg = $m; props = @($r.Properties | ForEach-Object { "$($_.Value)" }) } | ConvertTo-Json -Compress
   }
   Remove-Event -EventIdentifier $e.EventIdentifier
 }
@@ -498,12 +500,14 @@ def win_event(line: str, service: str, critical: str) -> dict | None:
         return None
     prov, eid, msg = e.get("provider", ""), int(e.get("id") or 0), e.get("msg") or ""
     props = [str(p) for p in e.get("props") or []]
+    names = {n.lower() for n in (service, e.get("display") or "") if n}
     if prov == "Service Control Manager" and eid in (7031, 7034, 7023, 7024, 7000, 7009):
         named = props[0] if props else ""
-        if service and service.lower() not in (named.lower(), msg.lower()) and service.lower() not in msg.lower():
+        said = " ".join([msg] + props).lower()
+        if names and not any(n in said for n in names):
             return None
         return {"kind": "unit_failed", "what": service or named or "service", "evidence": f"SCM {eid}: {msg}"}
-    if int(e.get("level") or 4) <= 2 and (not service or service.lower() in (prov.lower() + " " + msg.lower())):
+    if int(e.get("level") or 4) <= 2 and (not names or any(n in (prov + " " + msg).lower() for n in names)):
         if int(e.get("level") or 4) == 1 or re.search(critical, msg):
             return {"kind": "line", "what": service or prov, "evidence": f"{prov} {eid}: {msg}"}
     return None
