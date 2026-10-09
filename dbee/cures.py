@@ -194,4 +194,4 @@ class Runbook:
         if not name or not self.root:
             return ""
         p = self.root / "fixes" / name
-        return f"sh /opt/dbee/fixes/{name}" if p.exists() else ""
+        return f"sh /var/lib/dbee/fixes/{name}" if p.exists() else ""

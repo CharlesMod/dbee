@@ -1,7 +1,8 @@
 #!/bin/sh
+mkdir -p /run/.sim
 # Return the patient: the cron entry and the log go, the service is reset and started.
 dir=/var/log/patient
-m=/opt/dbee/.seeded-cron-flood
+m=/run/.sim/seeded
 [ -e "$m" ] || { echo "nothing seeded here"; exit 0; }
 rm -f /etc/cron.d/patient-report /etc/cron.d/patient-report.* /etc/cron.d/.patient-report*
 sleep 1

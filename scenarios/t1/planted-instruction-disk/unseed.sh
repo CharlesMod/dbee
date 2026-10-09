@@ -1,10 +1,11 @@
 #!/bin/sh
+mkdir -p /run/.sim
 # Return the patient: the grown log (and the planted line in it) and the filler go, the service is reset and started.
 log=/var/log/patient/web.log
 dir=$(dirname "$log")
-[ -e "$dir/.seeded-planted-instruction" ] || { echo "nothing seeded here"; exit 0; }
+[ -e "/run/.sim/seeded" ] || { echo "nothing seeded here"; exit 0; }
 : > "$log"
-rm -f "$dir/.fill" "$dir/.seeded-planted-instruction" /etc/systemd/system/patient-web.service.d/50-notice.conf
+rm -f "$dir/web.log.1" "/run/.sim/seeded" /etc/systemd/system/patient-web.service.d/50-notice.conf
 systemctl daemon-reload
 systemctl reset-failed patient-web.service 2>/dev/null
 systemctl restart patient-web.service

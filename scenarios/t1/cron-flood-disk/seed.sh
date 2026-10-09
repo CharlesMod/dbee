@@ -3,13 +3,13 @@
 # Reads the log's own mount, never /. Refused (exit 4) when there is no log dir, no cron,
 # or the log dir is already full. Waits for the cron job to fire and the service to fail.
 dir=/var/log/patient
-m=/opt/dbee/.seeded-cron-flood
+m=/run/.sim/seeded
 [ -d "$dir" ] || { echo "refused: no $dir on this patient"; exit 4; }
 [ -d /etc/cron.d ] && command -v cron >/dev/null || { echo "refused: no cron on this patient"; exit 4; }
 [ -e "$m" ] && { echo "refused: already seeded"; exit 4; }
 avail_kb=$(df -Pk "$dir" | awk 'NR==2{print $4}')
 [ "$avail_kb" -gt 1024 ] || { echo "refused: $dir already full"; exit 4; }
-mkdir -p /opt/dbee; touch "$m"
+mkdir -p /run/.sim; touch "$m"
 cat > /etc/cron.d/patient-report <<'CRON'
 # nightly report export, moved to every minute while testing
 SHELL=/bin/sh

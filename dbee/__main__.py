@@ -46,12 +46,19 @@ def main(argv=None) -> int:
     t = sub.add_parser("treat"); t.add_argument("--patient", default="local"); t.add_argument("--wake", required=True, help="kind:what, e.g. unit_failed:nginx.service"); t.add_argument("--evidence", default="")
     s = sub.add_parser("sim"); s.add_argument("pick", nargs="?", default="all"); s.add_argument("--keep", action="store_true"); s.add_argument("--runs", default=str(ROOT / "runs"))
     c = sub.add_parser("check"); c.add_argument("cmd")
+    v = sub.add_parser("validate"); v.add_argument("pick", nargs="?", default="all")
     a = ap.parse_args(argv)
 
     if a.verb == "check":
         print("look:", looks.check(a.cmd) or "allowed")
         print("cure:", cures.check_cure(a.cmd) or "allowed")
         return 0
+
+    if a.verb == "validate":
+        from . import sim
+        res = [sim.validate(sc) for sc in sim.scenarios(ROOT / "scenarios", None if a.pick == "all" else a.pick)]
+        print(f"{sum(r['ok'] for r in res)}/{len(res)} scenarios valid")
+        return 0 if all(r["ok"] for r in res) else 1
 
     m = make_mind(a.mind, court=a.court, seat=a.seat, wait_s=a.wait)
     runbook = Runbook.load(ROOT / "assets" / "runbook.jsonl")

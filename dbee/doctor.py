@@ -153,7 +153,7 @@ class Doctor:
                         if phase != "treat":
                             out = "refused: name the mechanism first (`diagnose`), then cure."
                             case.refusals.append({"kind": "cure", "what": a.get("command", ""), "why": "before diagnosis"})
-                        elif len(case.cures) >= CURE_BUDGET:
+                        elif len(case.cures) >= self._cure_budget(case):
                             out = "refused: two cures have run; `hand` the case over or `close` it if the last verify was green."
                         else:
                             out = self._do_cure(case, a, wake)
@@ -191,7 +191,10 @@ class Doctor:
 
     # ------------------------------------------------------------- the pieces
     def _ask(self, case: Case, msgs, phase):
-        tools = TOOLS if phase == "treat" else [t for t in TOOLS if t["function"]["name"] in ("look", "diagnose", "hand")]
+        if phase == "triage" and len(case.looks) >= LOOK_BUDGET:
+            tools = [t for t in TOOLS if t["function"]["name"] in ("diagnose", "hand")]
+        else:
+            tools = TOOLS if phase == "treat" else [t for t in TOOLS if t["function"]["name"] in ("look", "diagnose", "hand")]
         effort = self.effort.get(phase, "")
         r = self.mind.chat(msgs, tools=tools, max_tokens=self.max_tokens, effort=effort)
         case.turns += 1
@@ -235,15 +238,20 @@ class Doctor:
         return m
 
     def _first_look(self, wake: Wake) -> str:
-        """What a doctor reads before thinking: the unit's state and its last log lines."""
+        """What a doctor reads before thinking: the unit's state, its last log lines, its
+        whole definition with drop-ins, the machine's load, and what changed in the last hour."""
         cmds = ["uptime", "df -Ph", "free -m"]
         if wake.kind in ("unit_failed", "oom") and wake.what.endswith(".service"):
             cmds = [f"systemctl status {wake.what} --no-pager -l | head -30",
-                    f"journalctl -u {wake.what} --no-pager -n 25 -o short-iso"] + cmds
+                    f"journalctl -u {wake.what} --no-pager -n 25 -o short-iso",
+                    f"systemctl cat {wake.what} --no-pager"] + cmds
         elif wake.kind == "health_miss":
             cmds = ["systemctl --failed --no-pager", "ss -ltnp"] + cmds
         else:
             cmds = ["journalctl --no-pager -n 30 -o short-iso -p warning", "systemctl --failed --no-pager"] + cmds
+        # what changed: the first question on call. Config and installed files touched in
+        # the last hour, newest first (a fault that just began usually has a change behind it)
+        cmds.append("find /etc /opt /usr/local /srv -xdev -type f -mmin -60 -printf '%TY-%Tm-%Td %TH:%TM  %u:%g %m  %p\\n' | sort -r | head -25")
         parts = []
         for c in cmds:
             code, out = looks.look(self.patient, c, timeout=20)
@@ -289,7 +297,10 @@ class Doctor:
         if code == 126:
             case.refusals.append({"kind": "look", "what": cmd, "why": out})
         note = "\n[you have run this exact look before; its answer has not changed. Read it, or look elsewhere.]" if n == 2 else ""
-        return f"[exit {code}]\n{out}{note}"
+        left = LOOK_BUDGET - len(case.looks)
+        budget = (f"\n[looks left: {left}]" if left > 0 else
+                  "\n[looks spent: decide now. `diagnose` with what you have read, or `hand` it over.]")
+        return f"[exit {code}]\n{out}{note}{budget}"
 
     def _do_cure(self, case: Case, a: dict, wake: Wake) -> str:
         cure = Cure(name=f"written:{abs(hash(a.get('command', ''))) % 10**8:08d}", command=a.get("command", ""),
@@ -319,6 +330,17 @@ class Doctor:
         if vcode == 0 and woke_code == 0:
             return (f"cure ran [exit {r.code}]:\n{rec['out']}\n\nVERIFY `{cure.verify}` [exit 0: green]:\n{vout}\n\n"
                     f"RE-READ of what woke you [green]:\n{woke_out}\n\nIf the mechanism is addressed (not just the symptom), `close` with your finding.")
+        if vcode == 0 and woke_code != 0:
+            # the cure did what it said, but what woke the doctor is still down: keep the
+            # cure, show why the thing is still down, and let one more cure finish the job
+            tail = ""
+            if wake.what.endswith(".service"):
+                _, tail = looks.look(self.patient, f"journalctl -u {wake.what} --no-pager -n 12 -o short-iso")
+            return (f"cure ran [exit {r.code}]:\n{rec['out']}\n\nVERIFY `{cure.verify}` [exit 0: green]:\n{vout}\n\n"
+                    f"BUT what woke you is still red [exit {woke_code}]: {woke_out.strip()[:200]}\n"
+                    + (f"its latest lines:\n{tail}\n" if tail else "")
+                    + f"The cure is kept (its undo is recorded). Cures left: {self._cure_budget(case) - len(case.cures)}. "
+                    "Finish the job with one more `cure`, or `hand` it over.")
         # red: undo (nothing to run when the mind said there is none)
         self.say(f"[{case.id}] verify red ({vcode}/{woke_code}); undoing")
         if cure.irreversible:
@@ -330,7 +352,14 @@ class Doctor:
             undo_said = f"The undo ran [exit {u.code}]."
         return (f"cure ran [exit {r.code}]:\n{rec['out']}\n\nVERIFY `{cure.verify}` [exit {vcode}: RED]:\n{vout}\n\n"
                 f"RE-READ of what woke you [exit {woke_code}]:\n{woke_out}\n\n{undo_said} "
-                f"{'One more cure may run' if len(case.cures) < CURE_BUDGET else 'No more cures'}; or `hand` it over with what you know.")
+                f"{'One more cure may run' if len(case.cures) < self._cure_budget(case) else 'No more cures'}; or `hand` it over with what you know.")
+
+    @staticmethod
+    def _cure_budget(case: "Case") -> int:
+        """Two cures, and one more once a cure made progress: its own verify read green
+        while what woke the doctor still read red (the fix is half done)."""
+        half = any(c.get("verify_code") == 0 and c.get("woke_code") not in (0, None) for c in case.cures)
+        return CURE_BUDGET + (1 if half else 0)
 
     def _verify(self, verify: str) -> tuple[int, str]:
         """Each look of the verify in turn; the first red one is the answer."""
@@ -365,7 +394,7 @@ class Doctor:
         if said == "no":
             return False, (f"you say the cause is not removed. Your diagnosis: {case.diagnosis.get('cause', '')[:300]} "
                            f"A close that leaves the cause comes back. Cure the cause"
-                           + (" (one more cure may run)" if len(case.cures) < CURE_BUDGET else "")
+                           + (" (one more cure may run)" if len(case.cures) < self._cure_budget(case) else "")
                            + ", or `hand` it over naming the step.")
         if said not in ("yes", "unsure"):
             return False, "say whether the cause is removed: cause_removed is yes, no or unsure"

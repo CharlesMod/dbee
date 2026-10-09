@@ -26,13 +26,14 @@ class Result:
 class Patient:
     name = "patient"
 
-    def argv(self, cmd: str, user: str = "root") -> list[str]:
+    def argv(self, cmd: str, user: str = "root", interactive: bool = False) -> list[str]:
         raise NotImplementedError
 
-    def run(self, cmd: str, *, timeout: float = 60, user: str = "root") -> Result:
+    def run(self, cmd: str, *, timeout: float = 60, user: str = "root", input: str | None = None) -> Result:
         try:
-            p = subprocess.run(self.argv(cmd, user), capture_output=True, text=True,
-                               timeout=timeout, stdin=subprocess.DEVNULL)
+            p = subprocess.run(self.argv(cmd, user, interactive=input is not None), capture_output=True, text=True,
+                               timeout=timeout, input=input,
+                               stdin=None if input is not None else subprocess.DEVNULL)
         except subprocess.TimeoutExpired as e:
             out = (e.stdout or b"").decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
             return Result(124, out + f"\n[timed out after {timeout:.0f}s]")
@@ -48,7 +49,7 @@ class Patient:
 class Local(Patient):
     name = "local"
 
-    def argv(self, cmd, user="root"):
+    def argv(self, cmd, user="root", interactive=False):
         return ["sh", "-c", cmd]
 
 
@@ -57,7 +58,7 @@ class Ssh(Patient):
         self.host = host
         self.name = host
 
-    def argv(self, cmd, user="root"):
+    def argv(self, cmd, user="root", interactive=False):
         return ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", self.host, cmd]
 
 
@@ -75,8 +76,8 @@ class Podman(Patient):
         self.name = container
         self.pm = _podman()
 
-    def argv(self, cmd, user="root"):
-        return [*self.pm, "exec", "-u", user, self.container, "sh", "-c", cmd]
+    def argv(self, cmd, user="root", interactive=False):
+        return [*self.pm, "exec", *(["-i"] if interactive else []), "-u", user, self.container, "sh", "-c", cmd]
 
     # --- the simulator's side: a throwaway patient's life ---
     def up(self, image: str, *, mem: str = "1g", disk_mb: int = 0) -> None:

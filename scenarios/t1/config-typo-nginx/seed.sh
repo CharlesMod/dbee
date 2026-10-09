@@ -1,11 +1,11 @@
 #!/bin/sh
 # nginx is enabled with a new site conf that does not parse, and started: it fails.
 # Refused (exit 4) when nginx is not installed or conf.d is absent.
-m=/opt/dbee/.seeded-config-typo-nginx
+m=/run/.sim/seeded
 command -v nginx >/dev/null || { echo "refused: nginx not installed"; exit 4; }
 [ -d /etc/nginx/conf.d ] || { echo "refused: no /etc/nginx/conf.d"; exit 4; }
 [ -e "$m" ] && { echo "refused: already seeded"; exit 4; }
-mkdir -p /opt/dbee; touch "$m"
+mkdir -p /run/.sim; touch "$m"
 cat > /etc/nginx/conf.d/patient-proxy.conf <<'CONF'
 server {
     lissten 8081;

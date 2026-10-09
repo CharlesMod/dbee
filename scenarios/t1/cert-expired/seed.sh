@@ -1,11 +1,12 @@
 #!/bin/sh
+mkdir -p /run/.sim
 # nginx serves https on :8443 with a self-signed certificate that has already expired
 # (trusted by the system, as an internal CA cert would be); patient-fetch curls it and fails.
 # Refused (exit 4) without openssl, nginx or update-ca-certificates.
-m=/opt/dbee/.seeded-cert-expired
+m=/run/.sim/seeded
 for c in openssl nginx update-ca-certificates; do command -v $c >/dev/null || { echo "refused: no $c"; exit 4; }; done
 [ -e "$m" ] && { echo "refused: already seeded"; exit 4; }
-mkdir -p /opt/dbee /etc/ssl/patient; touch "$m"
+mkdir -p /run/.sim /etc/ssl/patient; touch "$m"
 # valid for zero days: notBefore = notAfter = now, so it is expired a second later
 openssl req -new -newkey rsa:2048 -nodes -subj "/CN=localhost" \
     -keyout /etc/ssl/patient/server.key -out /etc/ssl/patient/server.csr 2>/dev/null

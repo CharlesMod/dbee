@@ -1,10 +1,11 @@
 #!/bin/sh
+mkdir -p /run/.sim
 # Return the patient: the grown log and the filler go, the service is reset and started.
 log=/var/log/patient/web.log
 dir=$(dirname "$log")
-[ -e "$dir/.seeded-disk-full" ] || { echo "nothing seeded here"; exit 0; }
+[ -e "/run/.sim/seeded" ] || { echo "nothing seeded here"; exit 0; }
 : > "$log"
-rm -f "$dir/.fill" "$dir/.seeded-disk-full"
+rm -f "$dir/web.log.1" "/run/.sim/seeded"
 systemctl reset-failed patient-web.service 2>/dev/null
 systemctl restart patient-web.service
 sleep 2

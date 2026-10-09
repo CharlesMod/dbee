@@ -9,10 +9,10 @@
 # Wake note: the unit's own 'Failed with result oom-kill' line wakes the doctor (unit_failed);
 # the kernel's OOM line is not relied on inside a container.
 # Refused (exit 4) when python3 is missing or the cgroup has no memory controller.
-m=/opt/dbee/.seeded-oom-service
+m=/run/.sim/seeded
 command -v python3 >/dev/null || { echo "refused: no python3"; exit 4; }
 [ -e "$m" ] && { echo "refused: already seeded"; exit 4; }
-mkdir -p /opt/dbee; touch "$m"
+mkdir -p /run/.sim; touch "$m"
 cat > /usr/local/bin/patient-batch <<'PY'
 #!/usr/bin/python3
 # the batch job: builds an in-memory table of ~40 MB, then serves from it

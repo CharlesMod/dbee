@@ -1,6 +1,7 @@
 #!/bin/sh
+mkdir -p /run/.sim
 # Return the patient: nginx stopped and disabled again, the new conf (or its moved-aside copy) gone.
-m=/opt/dbee/.seeded-config-typo-nginx
+m=/run/.sim/seeded
 [ -e "$m" ] || { echo "nothing seeded here"; exit 0; }
 systemctl stop nginx.service 2>/dev/null
 systemctl disable nginx.service >/dev/null 2>&1

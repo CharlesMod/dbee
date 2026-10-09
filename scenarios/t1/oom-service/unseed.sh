@@ -1,6 +1,7 @@
 #!/bin/sh
+mkdir -p /run/.sim
 # Return the patient: the unit, its script, any drop-in the cure added and the ready file go.
-m=/opt/dbee/.seeded-oom-service
+m=/run/.sim/seeded
 [ -e "$m" ] || { echo "nothing seeded here"; exit 0; }
 systemctl stop patient-batch.service 2>/dev/null
 systemctl disable patient-batch.service >/dev/null 2>&1

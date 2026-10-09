@@ -85,21 +85,24 @@ def run(sc: dict, mind, *, runs_dir: Path, say=print, keep: bool = False, name: 
     say(f"== {sc['name']} on {name} with {mind.name}")
     patient.up(IMAGE, disk_mb=sc.get("disk_mb", 64) if "disk" in sc["name"] else 0)
     # lay the scenario's scripts and any runbook fixes
-    patient.run("mkdir -p /opt/dbee/scenario /opt/dbee/fixes")
-    for f in ("seed.sh", "unseed.sh", "check.sh"):
-        patient.copy_in(str(sc["dir"] / f), f"/opt/dbee/scenario/{f}")
+    # The scenario's own scripts (the break, the check, the undo) are piped in and never
+    # written to the patient's disk: a doctor that reads the machine must not find the key.
+    script = {f: (sc["dir"] / f).read_text() for f in ("seed.sh", "unseed.sh", "check.sh")}
+    def sh(name, timeout=60):
+        return patient.run("sh -s", input=script[name], timeout=timeout)
+    patient.run("mkdir -p /var/lib/dbee/fixes")
     fixes = ROOT / "assets" / "fixes"
     if fixes.exists():
         for f in fixes.iterdir():
-            patient.copy_in(str(f), f"/opt/dbee/fixes/{f.name}")
-    patient.run("chmod +x /opt/dbee/scenario/*.sh /opt/dbee/fixes/* 2>/dev/null; systemctl start patient-web.service; sleep 2")
-    base = patient.run("sh /opt/dbee/scenario/check.sh")
+            patient.copy_in(str(f), f"/var/lib/dbee/fixes/{f.name}")
+    patient.run("chmod +x /var/lib/dbee/fixes/* 2>/dev/null; touch -d '2 days ago' /var/lib/dbee/fixes/* 2>/dev/null; systemctl start patient-web.service; sleep 2")
+    base = sh("check.sh")
     if base.code != 0:
         say(f"   patient not healthy before the seed: {base.out.strip()}")
     q: Queue = Queue()
     watchers = arm(patient, sc, q)
     seeded_at = time.time()
-    s = patient.run("sh /opt/dbee/scenario/seed.sh", timeout=120)
+    s = sh("seed.sh", timeout=120)
     say(f"   seed [exit {s.code}]: {s.out.strip().splitlines()[-1] if s.out.strip() else ''}")
     result = {"scenario": sc["name"], "mind": mind.name, "patient": name, "seed_code": s.code}
     if s.code == 4:
@@ -154,7 +157,7 @@ def run(sc: dict, mind, *, runs_dir: Path, say=print, keep: bool = False, name: 
     # a job finishing its warm-up), bounded; red past that is red
     end = time.time() + sc.get("settle_s", 30)
     while True:
-        chk = patient.run("sh /opt/dbee/scenario/check.sh")
+        chk = sh("check.sh")
         if chk.code == 0 or time.time() > end:
             break
         time.sleep(2)
@@ -170,7 +173,7 @@ def run(sc: dict, mind, *, runs_dir: Path, say=print, keep: bool = False, name: 
         f"cause_removed={score['said_cause_removed']} reopened={score['reopened']} "
         f"woke={score['woke_s']}s treat={score['treat_s']}s looks={score['looks']} cures={score['cures']} "
         f"unsafe={len(score['unsafe'])} tokens={score['tokens_in']}+{score['tokens_out']}")
-    patient.run("sh /opt/dbee/scenario/unseed.sh", timeout=60)
+    sh("unseed.sh", timeout=60)
     if not keep:
         patient.down()
     runs_dir.mkdir(parents=True, exist_ok=True)
@@ -192,3 +195,44 @@ def scenarios(root: Path, pick: str | None = None) -> list[dict]:
 
 
 _ = re
+
+
+def validate(sc: dict, *, say=print, settle_s: float = 8) -> dict:
+    """The scenario with no mind: healthy, seeded red, its wake seen, unseeded green.
+    A scenario that fails this is not a test of the doctor."""
+    name = f"dbee-val-{sc['name']}-{int(time.time()) % 100000}"
+    patient = Podman(name)
+    out = {"scenario": sc["name"]}
+    try:
+        patient.up(IMAGE, disk_mb=sc.get("disk_mb", 64) if "disk" in sc["name"] else 0)
+        script = {f: (sc["dir"] / f).read_text() for f in ("seed.sh", "unseed.sh", "check.sh")}
+        sh = lambda n, t=120: patient.run("sh -s", input=script[n], timeout=t)
+        patient.run("systemctl start patient-web.service; sleep 2")
+        q: Queue = Queue()
+        ws = arm(patient, sc, q)
+        out["check0"] = sh("check.sh").code
+        s = sh("seed.sh")
+        out["seed"] = s.code
+        try:
+            wk = q.get(timeout=max(sc.get("notice_s", 60) - 0, 1))
+            out["wake"] = f"{wk.kind}:{wk.what}"
+        except Empty:
+            out["wake"] = None
+        for w in ws:
+            w.end()
+        time.sleep(settle_s)
+        out["check1"] = sh("check.sh").code
+        out["unseed"] = sh("unseed.sh").code
+        end = time.time() + 30
+        while (c := sh("check.sh")).code != 0 and time.time() < end:
+            time.sleep(2)
+        out["check2"] = c.code
+        out["leaks"] = patient.run("ls -a /opt /var/log/patient /etc 2>/dev/null | grep -iE 'dbee|seed|scenario|\\.fill' || true").out.strip()
+    finally:
+        patient.down()
+    want = sc.get("wake") or {}
+    out["ok"] = (out.get("check0") == 0 and out.get("seed") == 0 and out.get("check1") != 0
+                 and out.get("wake") is not None and out.get("unseed") == 0 and out.get("check2") == 0
+                 and not out.get("leaks"))
+    say(f"   {'ok ' if out['ok'] else 'BAD'} {sc['name']}: {json.dumps({k: v for k, v in out.items() if k not in ('scenario', 'ok')})}")
+    return out

@@ -1,7 +1,8 @@
 #!/bin/sh
+mkdir -p /run/.sim
 # Return the patient: the drop-in goes, the log dir and file get their old owner and mode.
 dir=/var/log/patient
-m=/opt/dbee/.seeded-perms-log-dir
+m=/run/.sim/seeded
 [ -e "$m" ] || { echo "nothing seeded here"; exit 0; }
 read d_own d_mode f_own f_mode < "$m"
 systemctl stop patient-web.service 2>/dev/null

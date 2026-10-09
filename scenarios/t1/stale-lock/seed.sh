@@ -1,12 +1,12 @@
 #!/bin/sh
 # patient-web is replaced by its single-instance-guarded form (copied from /opt/patient),
 # and a lock holding a dead pid is left behind. Refused (exit 4) when the fixtures are missing.
-m=/opt/dbee/.seeded-stale-lock
+m=/run/.sim/seeded
 for f in web-locked.sh patient-web-locked.service; do
     [ -e /opt/patient/$f ] || { echo "refused: /opt/patient/$f missing"; exit 4; }
 done
 [ -e "$m" ] && { echo "refused: already seeded"; exit 4; }
-mkdir -p /opt/dbee /run/patient; touch "$m"
+mkdir -p /run/.sim /run/patient; touch "$m"
 cp /opt/patient/patient-web-locked.service /etc/systemd/system/
 pid=424242; while kill -0 $pid 2>/dev/null; do pid=$((pid+1)); done
 echo $pid > /run/patient/web.lock
