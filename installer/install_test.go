@@ -491,3 +491,26 @@ func TestTheHivesMindKeepsABundledEngineForWhenTheHiveCannotAnswer(t *testing.T)
 		t.Fatalf("[mind.fallback] sits with [mind]:\n%s", toml)
 	}
 }
+
+func TestAFallbackThatCannotRunHereLeavesTheHiveAloneAndSaysWhy(t *testing.T) {
+	b := newBox(t)
+	s := b.setup(cpuOnly8GB, func(s *Setup) {
+		s.Hive = Hive{Here: true, Court: "http://court.invalid:4410"}
+		s.ProbeEngine = func(context.Context, string) error {
+			return errors.New("the model server needs libgomp.so.1, which this machine lacks")
+		}
+	})
+	out, err := install(t, s, wizard.Answers{"mind_kind": "hive", "whole_machine": true})
+	if err != nil {
+		t.Fatalf("the Hive is the mind; a fallback that cannot run is no reason to fail: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "libgomp.so.1") || !strings.Contains(out, "the Hive's minds alone") {
+		t.Fatalf("the install says why there is no fallback:\n%s", out)
+	}
+	if toml := readFile(t, filepath.Join(b.root, "dbee.toml")); strings.Contains(toml, "[mind.fallback]") {
+		t.Fatalf("no fallback is named that cannot run:\n%s", toml)
+	}
+	if b.modelHits.Load() != 0 {
+		t.Fatal("no fallback model is downloaded for an engine that cannot run")
+	}
+}

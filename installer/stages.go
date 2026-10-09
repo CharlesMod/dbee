@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/CharlesMod/wasp/catalog"
 	"github.com/CharlesMod/wasp/engine"
 	"github.com/CharlesMod/wasp/fetch"
 	"github.com/CharlesMod/wasp/runtime"
@@ -30,6 +31,8 @@ type state struct {
 	Model     string `json:"model,omitempty"`
 	ModelSize int64  `json:"model_size,omitempty"`
 	Port      int    `json:"port,omitempty"`
+	// NoFallback is why the fallback engine cannot run here; the Hive's minds stand alone
+	NoFallback string `json:"no_fallback,omitempty"`
 }
 
 func (s *Setup) statePath() string { return filepath.Join(s.Root, "state.json") }
@@ -81,8 +84,8 @@ func (s *Setup) Plan(a wizard.Answers) ([]wizard.Stage, error) {
 	if e, ok := s.fallback(ch); ok {
 		// for when no Hive mind is usable: DBee starts it on demand, CPU only
 		stages = append(stages,
-			wizard.Stage{Name: "The fallback engine", Run: s.stageEngineOf(engine.CPU)},
-			wizard.Stage{Name: "The fallback model", Run: s.stageModel(choice{Kind: KindLocal, Entry: e})})
+			wizard.Stage{Name: "The fallback engine", Run: s.stageFallbackEngine},
+			wizard.Stage{Name: "The fallback model", Run: s.stageFallbackModel(e)})
 	}
 	stages = append(stages,
 		wizard.Stage{Name: "Configuration", Run: s.stageConfig(ch)},
@@ -162,6 +165,30 @@ func (s *Setup) stageEngine(ctx context.Context, step *wizard.Step) error {
 // stageEngineOf installs (or reuses) one build of the engine.
 func (s *Setup) stageEngineOf(flavor engine.Flavor) func(context.Context, *wizard.Step) error {
 	return func(ctx context.Context, step *wizard.Step) error { return s.installEngine(ctx, step, flavor) }
+}
+
+// stageFallbackEngine is best effort: the Hive is the mind, so an engine that
+// cannot run here is said and left out, never a reason to fail the install.
+func (s *Setup) stageFallbackEngine(ctx context.Context, step *wizard.Step) error {
+	if err := s.installEngine(ctx, step, engine.CPU); err != nil {
+		if ctx.Err() != nil {
+			return err
+		}
+		step.Sayf("the fallback engine cannot run here (%v); DBee will rely on the Hive's minds alone", err)
+		return s.update(func(st *state) { st.Engine, st.NoFallback = "", err.Error() })
+	}
+	return s.update(func(st *state) { st.NoFallback = "" })
+}
+
+func (s *Setup) stageFallbackModel(e catalog.Entry) func(context.Context, *wizard.Step) error {
+	model := s.stageModel(choice{Kind: KindLocal, Entry: e})
+	return func(ctx context.Context, step *wizard.Step) error {
+		if s.readState().NoFallback != "" {
+			step.Say("skipped: no fallback engine")
+			return nil
+		}
+		return model(ctx, step)
+	}
 }
 
 func (s *Setup) installEngine(ctx context.Context, step *wizard.Step, flavor engine.Flavor) error {
@@ -258,7 +285,7 @@ func (s *Setup) config(ch choice, port int) Config {
 	if ch.Kind == KindHive {
 		cfg.Court = ch.URL
 		if e, ok := s.fallback(ch); ok {
-			if st := s.readState(); st.Engine != "" && st.Model != "" {
+			if st := s.readState(); st.Engine != "" && st.Model != "" && st.NoFallback == "" {
 				cfg.Fallback = &Fallback{Engine: st.Engine, Model: st.Model, Label: e.Name, Ctx: 8192}
 			}
 		}
