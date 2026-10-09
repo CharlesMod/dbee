@@ -3,6 +3,25 @@
 What the simulator has taught about driving each mind. Newest first. A row is
 one run; the record is under `runs/<scenario>/<mind>/cases/`.
 
+## 2026-10-09 — the fallback mind, driven through (a 4B on 4 CPU threads)
+
+- **It falls back, and it leaves clean.** With the court unreachable, the
+  install's check got its answer from DBee's own engine, and the service fell
+  back on its first call of a real case: cron's exec bit removed, waking as
+  `unit_failed cron`. Uninstall --purge removed the units, the engine and
+  /opt/dbee. Driving it through also found a crash: a local import in the
+  spine verb made `dbee watch` crash-loop at start (81bfbd6, with a test).
+- **The 4B on the CPU cannot ground a diagnosis, and nothing stops it
+  retrying.** After 2 looks it diagnosed "EXTRA_OPTS unset". The real fault
+  is status 203/EXEC, a missing exec bit. It quoted a journal line from its
+  wake but changed the line's source (`systemd[1]` for `(cron)[41]`), so the
+  gate refused it as evidence not in anything read. That refusal was right.
+  It then sent the same diagnose 19 more times and looked nothing up in
+  between. Each turn took 60–100 s at 8k context, so one wrong case held 4
+  cores for half an hour. Stopped by hand at turn 22. The gate stays as it
+  is. A refusal repeated word for word should change what the mind sees
+  instead: drop diagnose from the kit until a new look lands.
+
 ## 2026-10-09 — the wizard path, driven through
 
 DBee Setup's window, not `--yes`: on Linux the pages were clicked in a browser
