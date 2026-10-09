@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"time"
 
@@ -152,6 +153,9 @@ func (s *Setup) stageEngine(ctx context.Context, step *wizard.Step) error {
 	flavor := engine.DetectFlavor(s.Profile)
 	if rec, ok := engine.Find(engine.LlamaTag, flavor, s.engineRoots()...); ok {
 		step.Sayf("an engine is already here (llama.cpp %s, %s); reusing it", rec.Tag, rec.Flavor)
+		if err := s.probeEngine(ctx, rec.Server); err != nil {
+			return err
+		}
 		return s.update(func(st *state) { st.Engine = rec.Server })
 	}
 	src := s.EngineSource
@@ -165,7 +169,22 @@ func (s *Setup) stageEngine(ctx context.Context, step *wizard.Step) error {
 		return err
 	}
 	step.Say("engine at " + rec.Server)
+	if err := s.probeEngine(ctx, rec.Server); err != nil {
+		return err
+	}
 	return s.update(func(st *state) { st.Engine = rec.Server })
+}
+
+// probeEngine proves the engine starts on this machine before a service is
+// built on it, so a missing system library is named here, with its package.
+func (s *Setup) probeEngine(ctx context.Context, server string) error {
+	if s.ProbeEngine != nil {
+		return s.ProbeEngine(ctx, server)
+	}
+	if s.goos() != goruntime.GOOS {
+		return nil
+	}
+	return engine.Probe(ctx, server)
 }
 
 func (s *Setup) stageModel(ch choice) func(context.Context, *wizard.Step) error {
@@ -296,13 +315,7 @@ func (s *Setup) specs(ch choice) ([]service.Spec, error) {
 		shape, ctx := s.serveShape(ch.Verdict)
 		args := engine.ServeArgs(st.Model, shape, ctx, shape.Slots, ch.Entry.Samplers,
 			engine.ServeOptions{Host: engine.LoopbackHost, Port: st.Port})
-		env := map[string]string{}
-		switch s.goos() {
-		case "linux":
-			env["LD_LIBRARY_PATH"] = filepath.Dir(st.Engine)
-		case "darwin":
-			env["DYLD_LIBRARY_PATH"] = filepath.Dir(st.Engine)
-		}
+		env := engine.Env(st.Engine, s.goos())
 		out = append(out, service.Spec{Name: MindService, Description: "DBee's model server (" + ch.Entry.Label + ")",
 			Exec: append([]string{st.Engine}, args...), Env: env, WorkDir: s.Root, RestartOnFailure: true,
 			LogFile: filepath.Join(logs, "mind.log")})

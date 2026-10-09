@@ -91,12 +91,15 @@ func (c Config) TOML() string {
 func shQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
 
 // Launcher is <root>/bin/dbee (dbee.cmd on Windows): it runs DBee with the
-// private Python and exports the court when a Hive's router is the mind.
+// private Python and exports the court when a Hive's router is the mind. Its
+// output is unbuffered: under a service it goes to a log file, which Python
+// would otherwise fill only in blocks, leaving the log empty while DBee sleeps.
 func Launcher(goos, app, python, court string) (name, body string) {
 	if goos == "windows" {
 		var b strings.Builder
 		b.WriteString("@echo off\r\n")
 		b.WriteString("set \"PYTHONPATH=" + app + "\"\r\n")
+		b.WriteString("set \"PYTHONUNBUFFERED=1\"\r\n")
 		if court != "" {
 			b.WriteString("set \"DBEE_COURT=" + court + "\"\r\n")
 		}
@@ -105,7 +108,7 @@ func Launcher(goos, app, python, court string) (name, body string) {
 	}
 	var b strings.Builder
 	b.WriteString("#!/bin/sh\n")
-	b.WriteString("PYTHONPATH=" + shQuote(app) + "${PYTHONPATH:+:$PYTHONPATH}\nexport PYTHONPATH\n")
+	b.WriteString("PYTHONPATH=" + shQuote(app) + "${PYTHONPATH:+:$PYTHONPATH}\nexport PYTHONPATH\nPYTHONUNBUFFERED=1\nexport PYTHONUNBUFFERED\n")
 	if court != "" {
 		b.WriteString("DBEE_COURT=" + shQuote(court) + "\nexport DBEE_COURT\n")
 	}

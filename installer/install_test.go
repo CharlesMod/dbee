@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -46,7 +47,8 @@ func TestAFullInstallWritesTheConfigTheLauncherAndBothServices(t *testing.T) {
 		}
 	}
 	launcher := readFile(t, filepath.Join(b.root, "bin", "dbee"))
-	if !strings.Contains(launcher, "PYTHONPATH='"+filepath.Join(b.root, "app")+"'") || !strings.Contains(launcher, "-m dbee") {
+	if !strings.Contains(launcher, "PYTHONPATH='"+filepath.Join(b.root, "app")+"'") || !strings.Contains(launcher, "-m dbee") ||
+		!strings.Contains(launcher, "export PYTHONUNBUFFERED") {
 		t.Fatalf("launcher:\n%s", launcher)
 	}
 	if fi, _ := os.Stat(filepath.Join(b.root, "bin", "dbee")); runtime.GOOS != "windows" && fi.Mode()&0o100 == 0 {
@@ -342,7 +344,7 @@ func TestMainServesTheWindowWithNoWindowAndAProfileOverride(t *testing.T) {
 
 func TestLauncherAndTomlForWindows(t *testing.T) {
 	name, body := Launcher("windows", `C:\D\app`, `C:\D\python\python.exe`, "http://c:1")
-	if name != "dbee.cmd" || !strings.Contains(body, `set "PYTHONPATH=C:\D\app"`) || !strings.Contains(body, `"C:\D\python\python.exe" -m dbee %*`) || !strings.Contains(body, "DBEE_COURT") {
+	if name != "dbee.cmd" || !strings.Contains(body, `set "PYTHONPATH=C:\D\app"`) || !strings.Contains(body, `"C:\D\python\python.exe" -m dbee %*`) || !strings.Contains(body, "DBEE_COURT") || !strings.Contains(body, `set "PYTHONUNBUFFERED=1"`) {
 		t.Fatalf("%s\n%s", name, body)
 	}
 	toml := Config{Spec: "claude:x", Home: `C:\D\home`}.TOML()
@@ -362,5 +364,23 @@ func TestLauncherAndTomlForWindows(t *testing.T) {
 	}
 	if got := DefaultRoot("linux", "/h", func(string) string { return "" }); got != "/h/.local/share/dbee" {
 		t.Fatal(got)
+	}
+}
+
+func TestAnEngineThatCannotStartHereStopsTheInstallNamingWhatItLacks(t *testing.T) {
+	b := newBox(t)
+	lacks := errors.New("the model server needs libgomp.so.1, which this machine lacks: install libgomp1 on Debian and Ubuntu, libgomp on Fedora, then Retry")
+	s := b.setup(cpuOnly8GB, func(s *Setup) {
+		s.ProbeEngine = func(context.Context, string) error { return lacks }
+	})
+	out, err := install(t, s, localAnswers())
+	if err == nil || !strings.Contains(err.Error(), "libgomp1") {
+		t.Fatalf("want the missing library named, got %v\n%s", err, out)
+	}
+	if exists(filepath.Join(b.root, "dbee.toml")) {
+		t.Fatal("no service is built on an engine that cannot start")
+	}
+	if _, err := install(t, b.setup(cpuOnly8GB, nil), localAnswers()); err != nil {
+		t.Fatalf("once the library is there, a retry resumes: %v", err)
 	}
 }

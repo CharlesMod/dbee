@@ -68,11 +68,14 @@ type Setup struct {
 	// Python puts a private interpreter under root and returns its path.
 	Python       func(ctx context.Context, root string, prog fetch.Progress) (string, error)
 	EngineSource engine.Source
-	ModelURL     func(catalog.Entry) string
-	EngineRoots  []string
-	ModelRoots   []string
-	Payload      fs.FS
-	PickPort     func() (int, error)
+	// ProbeEngine starts the engine once to prove it runs here (engine.Probe
+	// when the engine is built for the running system).
+	ProbeEngine func(ctx context.Context, server string) error
+	ModelURL    func(catalog.Entry) string
+	EngineRoots []string
+	ModelRoots  []string
+	Payload     fs.FS
+	PickPort    func() (int, error)
 	// HealthWait bounds the wait on a server still loading its model.
 	HealthWait time.Duration
 
