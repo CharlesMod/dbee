@@ -266,6 +266,10 @@ class Doctor:
         problems = cure.problems()
         if problems:
             case.refusals.append({"kind": "cure", "what": cure.command, "why": "; ".join(problems)})
+            same = sum(1 for r in case.refusals if r["kind"] == "cure" and r["what"] == cure.command)
+            if same >= 3:
+                case.end, case.finding = "stalled", f"the same cure refused three times: {problems[0]}"
+                return "refused three times; the case ends here."
             self.say(f"[{case.id}] cure refused: {problems[0]}")
             return "refused: " + "; ".join(problems) + "\nPropose a cure inside the shape, or `hand` the case over."
         rec = {"cure": {**asdict(cure), "irreversible": cure.irreversible}, "undo_recorded": time.time()}

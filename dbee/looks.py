@@ -37,6 +37,7 @@ FILTERS = {"grep", "tail", "head", "wc", "sort", "uniq", "cut", "awk", "sed", "t
 SECRET = re.compile(r"(?i)(api[_-]?key|token|password|(?<![/\w])passwd(?!\b/)|secret|authkey|private[_-]?key|\.ssh/|id_(rsa|ed25519|ecdsa|dsa)\b|/etc/shadow|\.pem\b|\.key\b|tailscaled\.state|\.gnupg/|\.netrc|credentials)")
 
 
+HARMLESS_REDIR = re.compile(r"(?<![\w/])(?:[12]?>&[12]|&?[12]?>\s*/dev/null)(?![\w/])")
 OPS = {";", "&&", "||", "|", "&", ">", ">>", "<", "<<", "(", ")", ">&", "<&", "&>", "|&"}
 
 
@@ -63,6 +64,7 @@ def check(cmd: str) -> str:
         return "empty"
     if "$(" in cmd or "`" in cmd:
         return "no command substitution in a look"
+    cmd = HARMLESS_REDIR.sub(" ", cmd)        # merging or discarding output writes nothing
     try:
         segs = segments(cmd)
     except ValueError as e:
