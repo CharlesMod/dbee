@@ -51,6 +51,7 @@ def test_an_openai_endpoint_answers_with_tool_calls(server, monkeypatch):
     assert sent["auth"] == "Bearer k-123"
     assert sent["body"]["model"] == "qwen3.5-4b-iq4xs"
     assert sent["body"]["n_predict"] == 64 and sent["body"]["chat_template_kwargs"] == {"reasoning_effort": "low"}
+    assert sent["body"]["reasoning_effort"] == "low"      # vLLM, Ollama and OpenAI read it here
 
 
 def test_a_restarting_server_is_waited_out(server):

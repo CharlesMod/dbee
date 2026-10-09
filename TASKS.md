@@ -53,7 +53,7 @@ stands.
 **Minds**
 - [x] The Hive's router (any model it serves), Claude, a file seat for a person (2026-10-09)
 - [x] Any OpenAI-compatible endpoint (Ollama, LM Studio, llama-server, vLLM) by URL alone; streamed, ended by silence (120 s) not length (2026-10-09)
-- [ ] Per-phase reasoning effort for thinking models (2026-10-09 for the Hive; to generalize)
+- [x] Per-phase reasoning effort for thinking models (2026-10-09: llama.cpp's chat_template_kwargs and the top-level reasoning_effort vLLM, Ollama and OpenAI read; Claude's extended thinking waits on the Claude-ceiling row, since thinking with tools must carry its thinking blocks back)
 
 **Reach the human**
 - [x] A hand-off goes somewhere a person will see it (2026-10-09: `[notify] url` POSTs the report with a Title, ntfy-style; `[notify] command` gets it on stdin for mail, Telegram or a toast; a failed send is logged, never raised)

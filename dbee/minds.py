@@ -133,11 +133,13 @@ def _get(url: str, timeout: float = 30) -> tuple[int, dict]:
 def openai_body(model: str, messages, tools, max_tokens: int, temperature: float, effort: str = "") -> dict:
     """A chat call as any OpenAI-compatible server takes it; `n_predict` is
     llama.cpp's own cap (a server's default can otherwise override max_tokens),
-    `chat_template_kwargs` its per-request reasoning effort; others ignore both."""
+    `chat_template_kwargs` its per-request reasoning effort, and the top-level
+    `reasoning_effort` is the same for vLLM, Ollama and OpenAI; each ignores the other's."""
     body = {"model": model, "messages": messages, "max_tokens": max_tokens,
             "n_predict": max_tokens, "temperature": temperature}
     if effort:
         body["chat_template_kwargs"] = {"reasoning_effort": effort}
+        body["reasoning_effort"] = effort
     if tools:
         body["tools"] = tools
     return body
