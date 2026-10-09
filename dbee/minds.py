@@ -70,6 +70,71 @@ def _get(url: str, timeout: float = 30) -> tuple[int, dict]:
             return e.code, {}
 
 
+def openai_body(model: str, messages, tools, max_tokens: int, temperature: float, effort: str = "") -> dict:
+    """A chat call as any OpenAI-compatible server takes it; `n_predict` is
+    llama.cpp's own cap (a server's default can otherwise override max_tokens),
+    `chat_template_kwargs` its per-request reasoning effort; others ignore both."""
+    body = {"model": model, "messages": messages, "max_tokens": max_tokens,
+            "n_predict": max_tokens, "temperature": temperature}
+    if effort:
+        body["chat_template_kwargs"] = {"reasoning_effort": effort}
+    if tools:
+        body["tools"] = tools
+    return body
+
+
+def openai_reply(out: dict, seconds: float, name: str) -> "Reply":
+    msg = (out.get("choices") or [{}])[0].get("message") or {}
+    usage = out.get("usage") or {}
+    calls = []
+    for tc in msg.get("tool_calls") or []:
+        fn = tc.get("function") or {}
+        try:
+            args = json.loads(fn.get("arguments") or "{}")
+        except ValueError:
+            args = {"_raw": fn.get("arguments")}
+        calls.append({"id": tc.get("id", ""), "name": fn.get("name", ""), "arguments": args})
+    return Reply(text=msg.get("content") or "", tool_calls=calls,
+                 tokens_in=int(usage.get("prompt_tokens") or 0),
+                 tokens_out=int(usage.get("completion_tokens") or 0),
+                 seconds=seconds, mind=name, raw=out)
+
+
+class OpenAIMind:
+    """Any OpenAI-compatible endpoint: DBee's own ride-along llama-server, Ollama,
+    LM Studio, vLLM, a hosted API. `url` is the base (…/v1); the key, when one is
+    needed, comes from the environment variable it names or ~/.config/dbee/secrets.env."""
+
+    def __init__(self, url: str, model: str = "", key_env: str = "", wait_s: float = 120):
+        self.url = url.rstrip("/")
+        if not self.url.endswith("/v1"):
+            self.url += "/v1"
+        self.model, self.key_env, self.wait_s = model, key_env, wait_s
+        self.name = f"openai:{model or self.url}"
+        self.say = print
+
+    def chat(self, messages, tools=None, *, max_tokens: int = 1024, temperature: float = 0.0, effort: str = "") -> "Reply":
+        """One call; a server that is down or restarting is backed off from until wait_s."""
+        headers = {}
+        key = _secret(self.key_env) if self.key_env else ""
+        if key:
+            headers["Authorization"] = f"Bearer {key}"
+        body = openai_body(self.model or "local", messages, tools, max_tokens, temperature, effort)
+        deadline, delay = time.time() + self.wait_s, 2.0
+        while True:
+            t0 = time.time()
+            try:
+                out = _post(f"{self.url}/chat/completions", body, headers=headers)
+                return openai_reply(out, time.time() - t0, self.name)
+            except (urllib.error.URLError, ConnectionError, TimeoutError, http.client.HTTPException) as e:
+                if isinstance(e, urllib.error.HTTPError) and e.code < 500 and e.code != 429:
+                    raise
+                if time.time() + delay > deadline:
+                    raise
+                time.sleep(delay)
+                delay = min(delay * 2, 30.0)
+
+
 class HiveMind:
     """A seat on the hive, by model name, for one call at a time."""
 
@@ -126,12 +191,7 @@ class HiveMind:
         url = grant["url"].rstrip("/")
         # n_predict beside max_tokens: the engine's own cap, which a pin's default
         # otherwise overrides (seen: 12000 on a call that asked 4096)
-        body = {"model": self.model, "messages": messages, "max_tokens": max_tokens,
-                "n_predict": max_tokens, "temperature": temperature}
-        if effort:
-            body["chat_template_kwargs"] = {"reasoning_effort": effort}
-        if tools:
-            body["tools"] = tools
+        body = openai_body(self.model, messages, tools, max_tokens, temperature, effort)
         t0 = time.time()
         usage, out = {}, {}
         try:
@@ -147,19 +207,7 @@ class HiveMind:
                       timeout=5)
             except Exception:  # noqa: BLE001 — the engine's idle reading frees the seat then
                 pass
-        msg = (out.get("choices") or [{}])[0].get("message") or {}
-        calls = []
-        for tc in msg.get("tool_calls") or []:
-            fn = tc.get("function") or {}
-            try:
-                args = json.loads(fn.get("arguments") or "{}")
-            except ValueError:
-                args = {"_raw": fn.get("arguments")}
-            calls.append({"id": tc.get("id", ""), "name": fn.get("name", ""), "arguments": args})
-        return Reply(text=msg.get("content") or "", tool_calls=calls,
-                     tokens_in=int(usage.get("prompt_tokens") or 0),
-                     tokens_out=int(usage.get("completion_tokens") or 0),
-                     seconds=time.time() - t0, mind=self.name, raw=out)
+        return openai_reply(out, time.time() - t0, self.name)
 
 
 class ClaudeMind:
@@ -247,6 +295,12 @@ def mind(spec: str, *, court: str = "", seat: str = "background", wait_s: float 
         return ClaudeMind(model or "claude-sonnet-5-5")
     if spec.startswith("file:"):
         return FileMind(spec[5:])
+    if spec.startswith(("openai:", "http://", "https://")):
+        # openai:URL[#model][@KEY_ENV]   e.g. openai:http://127.0.0.1:8099/v1#qwen3.5-4b
+        rest = spec[len("openai:"):] if spec.startswith("openai:") else spec
+        rest, _, key_env = rest.partition("@") if "@" in rest.split("//", 1)[-1] else (rest, "", "")
+        url, _, model = rest.partition("#")
+        return OpenAIMind(url, model=model, key_env=key_env, wait_s=wait_s)
     if not court:
         raise RuntimeError("a hive mind needs the court's address (--court or DBEE_COURT)")
     return HiveMind(court, spec, cls=seat, wait_s=wait_s)

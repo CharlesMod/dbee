@@ -47,7 +47,7 @@ def main(argv=None) -> int:
     ap.add_argument("--seat", default=os.environ.get("DBEE_SEAT", "background"), help="the router's call class: background, batch, tool, conversation")
     ap.add_argument("--wait", type=float, default=float(os.environ.get("DBEE_WAIT", "120")), help="seconds to wait for a seat before a call fails")
     sub = ap.add_subparsers(dest="verb", required=True)
-    w = sub.add_parser("watch"); w.add_argument("service", nargs="?", default="", help="a systemd unit, a launchd label or a Windows service; empty watches the whole machine"); w.add_argument("--patient", default="local", help="local, ssh:HOST, ssh-win:HOST (PowerShell), podman:NAME"); w.add_argument("--health", default="", help="a URL that should answer"); w.add_argument("--pattern", default="", help="what a critical line looks like (a regex); the platform's default otherwise")
+    w = sub.add_parser("watch"); w.add_argument("service", nargs="?", default="", help="a systemd unit, a launchd label or a Windows service; empty watches the whole machine"); w.add_argument("--patient", default="local", help="local, ssh:HOST, ssh-win:HOST (PowerShell), podman:NAME"); w.add_argument("--health", default="", help="a URL that should answer"); w.add_argument("--pattern", default="", help="what a critical line looks like (a regex); the platform's default otherwise"); w.add_argument("--config", default=os.environ.get("DBEE_CONFIG", ""), help="a dbee.toml: the mind, the services to watch, the doctor's home")
     pl = sub.add_parser("platform"); pl.add_argument("--patient", default="local")
     t = sub.add_parser("treat"); t.add_argument("--patient", default="local"); t.add_argument("--wake", required=True, help="kind:what, e.g. unit_failed:nginx.service"); t.add_argument("--evidence", default="")
     s = sub.add_parser("sim"); s.add_argument("pick", nargs="?", default="all"); s.add_argument("--keep", action="store_true"); s.add_argument("--repeat", type=int, default=1, help="run each scenario N times (a pass rate, not one coin flip)"); s.add_argument("--jobs", type=int, default=int(os.environ.get("DBEE_JOBS", "0")), help="scenarios at once, each its own patient; 0 (the default) runs every picked scenario at once, and calls past the mind's free seats wait at the router"); s.add_argument("--runs", default=str(ROOT / "runs"))
@@ -71,6 +71,14 @@ def main(argv=None) -> int:
         print(f"{p.name}: {p.platform.name} ({p.platform.shell})")
         return 0
 
+    cfg = None
+    if getattr(a, "config", ""):
+        from . import config as _config
+        cfg = _config.load(a.config)
+        _config.apply_env(cfg)
+        if cfg.mind:
+            a.mind = cfg.mind
+        globals()["HOME"] = cfg.home
     m = make_mind(a.mind, court=a.court, seat=a.seat, wait_s=a.wait)
     runbook = Runbook.load(ROOT / "assets" / "runbook.jsonl")
 
@@ -102,13 +110,21 @@ def main(argv=None) -> int:
     # watch: sleep until something wakes
     from .watch import EventWatcher, HealthWatcher
     q: Queue = Queue()
-    service = p.platform.resolve(p, a.service)["service"] if a.service else ""
-    ws = [EventWatcher(p, q, service, a.pattern)]
-    if a.health:
-        ws.append(HealthWatcher(p, q, a.health))
+    plan = [(a.service, a.pattern, a.health)] if (a.service or a.health or not cfg or not cfg.watches) \
+        else [(w.service, w.pattern, w.health) for w in cfg.watches]
+    ws, named = [], []
+    for svc, pattern, health in plan:
+        if svc or not health:
+            service = p.platform.resolve(p, svc)["service"] if svc else ""
+            ws.append(EventWatcher(p, q, service, pattern))
+            named.append(service or "the whole machine")
+        if health:
+            ws.append(HealthWatcher(p, q, health))
+            named.append(health)
+    service = ", ".join(named)
     for x in ws:
         x.start()
-    print(f"dbee sleeps on {p.name} ({p.platform.name}{', watching ' + service if service else ''}; {len(ws)} watchers); mind {m.name}")
+    print(f"dbee sleeps on {p.name} ({p.platform.name}; watching {service}); mind {m.name}")
     open_cases: dict[str, float] = {}
     try:
         while True:

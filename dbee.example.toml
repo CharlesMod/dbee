@@ -1,0 +1,22 @@
+# dbee.toml: how DBee runs on this machine. The installer writes one; edit freely.
+
+[mind]
+# where its thoughts go: the ride-along server, a hive model, claude:…, or any OpenAI-compatible URL
+spec = "openai:http://127.0.0.1:8099/v1#qwen3.5-4b-iq4xs"
+max_tokens = 1024
+# thinking models only: light while looking, careful when deciding
+# effort = { triage = "low", diagnose = "medium", treat = "medium" }
+
+# one table per service; with none, DBee watches the whole machine
+[[watch]]
+service = "nginx"
+
+[[watch]]
+service = "postgresql"
+pattern = "FATAL|PANIC|could not"
+
+[[watch]]
+health = "http://127.0.0.1:8080/"
+
+[doctor]
+home = "~/.dbee"
