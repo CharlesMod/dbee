@@ -76,7 +76,6 @@ def main(argv=None) -> int:
     if a.verb == "spine":
         if not a.court:
             print("dbee spine: name the court (--court or DBEE_COURT)"); return 2
-        from queue import Queue
         from .watch import SpineWatcher
         q: Queue = Queue()
         SpineWatcher(a.court, q).start()
