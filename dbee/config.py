@@ -6,6 +6,7 @@ whole machine with the mind named by --mind).
 
     [mind]
     spec = "openai:http://127.0.0.1:8099/v1#qwen3.5-4b-iq4xs"   # or claude:…, a hive model, a URL
+    court = "http://queen:4410"   # a hive model's court (its router); DBEE_COURT otherwise
     max_tokens = 1024
     effort = { triage = "low", diagnose = "medium", treat = "medium" }   # thinking models only
 
@@ -37,6 +38,7 @@ class Watch:
 @dataclass
 class Config:
     mind: str = ""
+    court: str = ""
     max_tokens: int = 0
     effort: dict = field(default_factory=dict)
     watches: list[Watch] = field(default_factory=list)
@@ -58,7 +60,7 @@ def load(path: str | os.PathLike) -> Config:
         watches.append(Watch(service=str(w.get("service", "")), pattern=str(w.get("pattern", "")),
                              health=str(w.get("health", ""))))
     doc = d.get("doctor") or {}
-    return Config(mind=str(m.get("spec", "")), max_tokens=int(m.get("max_tokens", 0) or 0),
+    return Config(mind=str(m.get("spec", "")), court=str(m.get("court", "")), max_tokens=int(m.get("max_tokens", 0) or 0),
                   effort={str(k): str(v) for k, v in eff.items()}, watches=watches,
                   home=Path(str(doc.get("home", "~/.dbee"))).expanduser(), path=p)
 

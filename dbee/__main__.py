@@ -42,7 +42,7 @@ def patient_of(spec: str):
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="dbee", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--mind", default=os.environ.get("DBEE_MIND", "gemma-4-26b-a4b"), help="claude[:model] or a hive model name")
+    ap.add_argument("--mind", default=os.environ.get("DBEE_MIND", "gemma-4-26b-a4b-iq3s"), help="claude[:model] or a hive model name")
     ap.add_argument("--court", default=os.environ.get("DBEE_COURT", ""), help="the hive court's URL for hive minds")
     ap.add_argument("--seat", default=os.environ.get("DBEE_SEAT", "background"), help="the router's call class: background, batch, tool, conversation")
     ap.add_argument("--wait", type=float, default=float(os.environ.get("DBEE_WAIT", "120")), help="seconds to wait for a seat before a call fails")
@@ -78,6 +78,8 @@ def main(argv=None) -> int:
         _config.apply_env(cfg)
         if cfg.mind:
             a.mind = cfg.mind
+        if cfg.court and not a.court:
+            a.court = cfg.court
         globals()["HOME"] = cfg.home
     m = make_mind(a.mind, court=a.court, seat=a.seat, wait_s=a.wait)
     runbook = Runbook.load(ROOT / "assets" / "runbook.jsonl")

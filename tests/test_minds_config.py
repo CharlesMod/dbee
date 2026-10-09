@@ -91,3 +91,18 @@ def test_a_watch_naming_nothing_is_refused(tmp_path):
     p.write_text('[[watch]]\npattern = "x"\n')
     with pytest.raises(ValueError, match="neither a service nor a health"):
         config.load(p)
+
+
+def test_a_hive_mind_takes_its_court_from_the_environment(monkeypatch):
+    monkeypatch.setenv("DBEE_COURT", "http://court.example:4410")
+    m = mind("gemma-4-26b-a4b-iq3s")
+    assert m.court == "http://court.example:4410"
+    monkeypatch.delenv("DBEE_COURT")
+    with pytest.raises(RuntimeError, match="court"):
+        mind("gemma-4-26b-a4b-iq3s")
+
+
+def test_dbee_toml_names_a_hive_court(tmp_path):
+    p = tmp_path / "dbee.toml"
+    p.write_text('[mind]\nspec = "gemma-4-26b-a4b-iq3s"\ncourt = "http://court.example:4410"\n')
+    assert config.load(p).court == "http://court.example:4410"

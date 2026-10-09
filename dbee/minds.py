@@ -287,7 +287,7 @@ class ClaudeMind:
 
 
 def mind(spec: str, *, court: str = "", seat: str = "background", wait_s: float = 120) -> HiveMind | ClaudeMind:
-    """``claude[:model]`` or a hive model name (``gemma-4-26b-a4b``); ``seat`` is
+    """``claude[:model]`` or a hive model name (``gemma-4-26b-a4b-iq3s``); ``seat`` is
     the router's call class (a frame keeps some seats for some classes: a 4 GB
     frame's one slot may answer only ``batch``)."""
     if spec.startswith("claude"):
@@ -301,8 +301,9 @@ def mind(spec: str, *, court: str = "", seat: str = "background", wait_s: float 
         rest, _, key_env = rest.partition("@") if "@" in rest.split("//", 1)[-1] else (rest, "", "")
         url, _, model = rest.partition("#")
         return OpenAIMind(url, model=model, key_env=key_env, wait_s=wait_s)
+    court = court or os.environ.get("DBEE_COURT", "")
     if not court:
-        raise RuntimeError("a hive mind needs the court's address (--court or DBEE_COURT)")
+        raise RuntimeError("a hive mind needs the court's address (--court, DBEE_COURT or [mind] court)")
     return HiveMind(court, spec, cls=seat, wait_s=wait_s)
 
 

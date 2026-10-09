@@ -157,7 +157,7 @@ DBEE_COURT=http://<queen>:4410 python3 -m dbee --mind qwen3.5-4b-iq4xs --seat ba
 python3 -m dbee --mind claude:claude-sonnet-5-5 sim t1
 
 # sleep on a real machine and treat what wakes you
-python3 -m dbee --mind gemma-4-26b-a4b watch --patient local
+python3 -m dbee --mind gemma-4-26b-a4b-iq3s watch --patient local
 
 # sit in the doctor's seat yourself (each turn written to a file, you answer)
 python3 -m dbee --mind file:runs/me/case1 sim port-taken
