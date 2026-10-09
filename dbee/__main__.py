@@ -44,7 +44,7 @@ def main(argv=None) -> int:
     sub = ap.add_subparsers(dest="verb", required=True)
     w = sub.add_parser("watch"); w.add_argument("--patient", default="local"); w.add_argument("--health", default="", help="a URL that should answer")
     t = sub.add_parser("treat"); t.add_argument("--patient", default="local"); t.add_argument("--wake", required=True, help="kind:what, e.g. unit_failed:nginx.service"); t.add_argument("--evidence", default="")
-    s = sub.add_parser("sim"); s.add_argument("pick", nargs="?", default="all"); s.add_argument("--keep", action="store_true"); s.add_argument("--jobs", type=int, default=int(os.environ.get("DBEE_JOBS", "8")), help="scenarios at once (each its own patient); match the mind's free seats"); s.add_argument("--runs", default=str(ROOT / "runs"))
+    s = sub.add_parser("sim"); s.add_argument("pick", nargs="?", default="all"); s.add_argument("--keep", action="store_true"); s.add_argument("--jobs", type=int, default=int(os.environ.get("DBEE_JOBS", "0")), help="scenarios at once, each its own patient; 0 (the default) runs every picked scenario at once, and calls past the mind's free seats wait at the router"); s.add_argument("--runs", default=str(ROOT / "runs"))
     c = sub.add_parser("check"); c.add_argument("cmd")
     v = sub.add_parser("validate"); v.add_argument("pick", nargs="?", default="all")
     a = ap.parse_args(argv)
@@ -68,9 +68,10 @@ def main(argv=None) -> int:
         picked = sim.scenarios(ROOT / "scenarios", None if a.pick == "all" else a.pick)
         if not picked:
             print("no scenario matches", a.pick); return 2
-        if a.jobs > 1:
+        jobs = a.jobs if a.jobs > 0 else len(picked)
+        if jobs > 1:
             from concurrent.futures import ThreadPoolExecutor
-            with ThreadPoolExecutor(max_workers=a.jobs) as pool:
+            with ThreadPoolExecutor(max_workers=jobs) as pool:
                 results = list(pool.map(lambda sc: sim.run(sc, m, runs_dir=Path(a.runs), keep=a.keep), picked))
         else:
             results = [sim.run(sc, m, runs_dir=Path(a.runs), keep=a.keep) for sc in picked]
