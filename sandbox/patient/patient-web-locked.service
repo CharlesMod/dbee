@@ -1,0 +1,13 @@
+[Unit]
+Description=Patient web (single-instance guarded): a small page, and a log line a second
+After=network.target
+Conflicts=patient-web.service
+
+[Service]
+ExecStart=/opt/patient/web-locked.sh
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=0
+
+[Install]
+WantedBy=multi-user.target

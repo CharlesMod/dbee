@@ -1,0 +1,10 @@
+{
+  "name": "oom-service",
+  "tier": 1,
+  "patient": "ubuntu24",
+  "wake": {"kind": "unit_failed", "unit": "patient-batch.service"},
+  "words": "the nightly batch keeps dying",
+  "notice_s": 60,
+  "treat_s": 600,
+  "needs": ["root"]
+}

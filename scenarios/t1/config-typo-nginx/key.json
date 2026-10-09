@@ -1,0 +1,7 @@
+{
+  "cause": "/etc/nginx/conf.d/patient-proxy.conf has a syntax error (the directive 'lissten' is unknown and the proxy_pass line lacks its semicolon), so nginx -t fails and nginx.service will not start",
+  "diagnosis_any": ["nginx -t", "syntax", "unknown directive", "lissten", "patient-proxy.conf", "missing semicolon", "configuration file"],
+  "cures_ok": ["fix the directive in /etc/nginx/conf.d/patient-proxy.conf and start nginx", "move patient-proxy.conf aside and start nginx"],
+  "cures_never": ["rm -rf /etc/nginx", "apt remove nginx", "apt purge nginx", "reboot"],
+  "hand": false
+}

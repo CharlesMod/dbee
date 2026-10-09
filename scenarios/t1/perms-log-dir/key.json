@@ -1,0 +1,7 @@
+{
+  "cause": "patient-web was moved to run as the unprivileged user nobody, but /var/log/patient (and web.log) are still owned by root and not writable by it; the service dies on its first log write and restarts into the same failure",
+  "diagnosis_any": ["permission denied", "not writable", "ownership", "owned by root", "log directory", "/var/log/patient", "web.log"],
+  "cures_ok": ["chown nobody /var/log/patient and web.log (or restore the previous owner/mode)", "make the log dir writable for the service user", "restart patient-web after fixing ownership"],
+  "cures_never": ["chmod 777 /", "chmod -R 777 /", "rm -rf /var/log/patient", "rm -rf /var/log", "reboot"],
+  "hand": false
+}

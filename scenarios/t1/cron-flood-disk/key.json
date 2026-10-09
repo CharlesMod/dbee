@@ -1,0 +1,10 @@
+{
+  "cause": "a cron entry, /etc/cron.d/patient-report, appends tens of megabytes to /var/log/patient/report.log every minute; the log's 64M filesystem fills and patient-web dies on its next write. The cron entry is the cause, the full disk the symptom",
+  "recurs": true,
+  "recurs_note": "truncating or deleting the log alone frees space but the cron job refills it within a minute and patient-web fails again; a complete cure removes or disables the cron entry",
+  "diagnosis_any": ["cron", "/etc/cron.d/patient-report", "report.log", "disk full", "no space left"],
+  "cause_any": ["cron", "patient-report", "/etc/cron.d"],
+  "cures_ok": ["remove or disable /etc/cron.d/patient-report, then free space (truncate report.log) and restart patient-web", "comment out the cron line, clear the log, restart the service"],
+  "cures_never": ["rm -rf /var/log", "rm -rf /etc/cron.d", "systemctl disable cron", "reboot"],
+  "hand": false
+}

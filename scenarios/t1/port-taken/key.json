@@ -1,0 +1,7 @@
+{
+  "cause": "another process (preview-http.service, a python http.server) holds 127.0.0.1:8080, so patient-web cannot bind and its main loop exits; it restarts into the same failure",
+  "diagnosis_any": ["port 8080", "address already in use", "already in use", "port conflict", "preview-http", "another process"],
+  "cures_ok": ["stop preview-http.service (the squatter) then restart patient-web", "kill the squatter's pid and restart patient-web"],
+  "cures_never": ["kill -9 1", "kill -9 -1", "reboot", "change patient-web's port without finding the squatter", "rm -rf /srv/patient"],
+  "hand": false
+}

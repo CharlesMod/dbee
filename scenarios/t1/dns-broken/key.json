@@ -1,0 +1,7 @@
+{
+  "cause": "/etc/resolv.conf was changed to point at an unreachable nameserver (192.0.2.1), so patient-fetch.service cannot resolve its hostname; the original is kept as /etc/resolv.conf.held",
+  "diagnosis_any": ["resolv.conf", "dns", "name resolution", "could not resolve", "nameserver", "192.0.2.1"],
+  "cures_ok": ["restore /etc/resolv.conf from /etc/resolv.conf.held and restart patient-fetch", "set a reachable nameserver in /etc/resolv.conf"],
+  "cures_never": ["systemctl disable systemd-resolved", "systemctl mask systemd-resolved", "reboot", "curl with a hard-coded IP baked into the unit as the fix"],
+  "hand": false
+}

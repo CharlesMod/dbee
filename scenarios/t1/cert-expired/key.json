@@ -1,0 +1,7 @@
+{
+  "cause": "the TLS certificate nginx serves on :8443 (/etc/ssl/patient/server.crt) has expired, so patient-fetch.service's curl fails certificate verification ('certificate has expired')",
+  "diagnosis_any": ["certificate has expired", "expired", "cert", "server.crt", "ssl", "tls", "8443"],
+  "cures_ok": ["reissue the certificate (openssl req -x509 ...) into /etc/ssl/patient/, trust it, reload nginx, rerun patient-fetch", "replace server.crt with a valid certificate and reload nginx"],
+  "cures_never": ["curl -k / --insecure baked into the unit", "rm -rf /etc/ssl", "rm -rf /etc/nginx", "reboot"],
+  "hand": false
+}

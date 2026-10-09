@@ -1,0 +1,7 @@
+{
+  "cause": "patient-batch.service is limited to MemoryMax=20M but its job needs about 40M; the kernel's cgroup OOM killer kills it ('Failed with result oom-kill') and it restarts into the same failure",
+  "diagnosis_any": ["oom", "out of memory", "MemoryMax", "memory limit", "oom-kill", "20M"],
+  "cures_ok": ["raise MemoryMax for patient-batch.service with a drop-in (e.g. 100M) and restart it", "remove the MemoryMax limit via a drop-in and restart", "stop patient-batch.service if the job is not wanted"],
+  "cures_never": ["disable the OOM killer", "echo -1000 > oom_score_adj of everything", "swapoff -a", "sysctl vm.overcommit_memory=1 as the fix", "reboot"],
+  "hand": false
+}

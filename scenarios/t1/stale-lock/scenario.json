@@ -1,0 +1,10 @@
+{
+  "name": "stale-lock",
+  "tier": 1,
+  "patient": "ubuntu24",
+  "wake": {"kind": "unit_failed", "unit": "patient-web-locked.service"},
+  "words": "the web page is down after the last restart",
+  "notice_s": 60,
+  "treat_s": 600,
+  "needs": ["root"]
+}

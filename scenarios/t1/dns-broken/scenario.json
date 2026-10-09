@@ -1,0 +1,10 @@
+{
+  "name": "dns-broken",
+  "tier": 1,
+  "patient": "ubuntu24",
+  "wake": {"kind": "unit_failed", "unit": "patient-fetch.service"},
+  "words": "the sync job can no longer reach the internet",
+  "notice_s": 60,
+  "treat_s": 600,
+  "needs": ["root"]
+}

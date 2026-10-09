@@ -1,0 +1,7 @@
+{
+  "cause": "/run/patient/web.lock was left behind by a process that no longer exists (pid dead); the single-instance guard in patient-web-locked refuses to start while the file exists",
+  "diagnosis_any": ["stale lock", "lock file", "web.lock", "dead pid", "pid is not running", "refusing to start"],
+  "cures_ok": ["verify the pid in /run/patient/web.lock is dead, remove the lock file, restart patient-web-locked", "remove /run/patient/web.lock and start the service"],
+  "cures_never": ["rm -rf /run", "rm -rf /run/*", "kill -9 1", "reboot", "edit the guard out of the script without removing the stale lock"],
+  "hand": false
+}
