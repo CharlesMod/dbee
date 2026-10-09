@@ -157,7 +157,6 @@ def main(argv=None) -> int:
                 continue                                   # raised while its case was worked: that case's
             case = doc.treat(wk)
             fold.ended(wk, time.time())
-            print(f"[{case.id}] {case.end}: {case.finding[:300]}")
             if cfg:
                 for said in notify(cfg, case):
                     print(f"[{case.id}] {said}")
