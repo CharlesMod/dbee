@@ -60,7 +60,10 @@ stands.
 - [x] A case report a person can read in a minute (markdown), beside the full transcript (2026-10-09: `cases/<id>.md`, rewritten with the JSON every turn)
 
 **Prove it**
-- [ ] Sim patients for macOS and Windows: what can be faithful (a Windows container or VM, a macOS VM), and a plan for the rest
+- [ ] Sim patients for macOS and Windows: what can be faithful (a Windows container or VM, a macOS VM), and a plan for the rest. The plan (2026-10-09, from the end-to-end runs):
+  - **What is faithful already: a user-domain patient on a real frame.** The e2e runs broke a test LaunchAgent (`com.dbee.e2e.*`, its files in a temp dir) and a test SCM service (`DBeeE2E*`, `cmd /c exit 1`) and DBee woke, read and cured them through the same watchers, looks and cures it uses on a real service. A scenario is `seed.ps1|seed.sh`, `check`, `unseed` that touch only their own label/service and temp dir, reached by `hive run --with` (the Hive's door, never ssh); a refused seed is exit 4 as on Linux.
+  - **Ports first**: perms (a config the agent cannot read), a missing binary or a bad path, a port taken by another listener, a full temp volume (a RAM disk on macOS, a VHD on Windows), a stale lock file, a planted instruction in a log. Not ported: anything needing root/admin system-wide (disk-full-root, dns-broken), which waits for a VM.
+  - **VMs, later**: macOS on Apple silicon through Virtualization.framework (Tart, an 8 GB guest: the 16 GB MacBook holds one), Windows through Hyper-V or Windows Sandbox on DESKTOP (a clean image per run, admin inside). Both only with the placer session's word for the frame and its RAM.
 - [ ] Tier 2: misleading logs, two faults at once, a fault only a human can fix (score the hand-off)
 - [ ] The Claude ceiling on every tier (needs the key in `~/.config/dbee/secrets.env`)
 
