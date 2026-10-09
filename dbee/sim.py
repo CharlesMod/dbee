@@ -185,7 +185,7 @@ def scenarios(root: Path, pick: str | None = None) -> list[dict]:
         sc = load_scenario(p.parent)
         if sc.get("blocked"):
             continue
-        if pick and pick not in (sc["name"], str(sc["tier"]), f"t{sc['tier']}"):
+        if pick and not set(pick.split(",")) & {sc["name"], str(sc["tier"]), f"t{sc['tier']}"}:
             continue
         out.append(sc)
     return out
