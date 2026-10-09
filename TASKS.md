@@ -40,9 +40,9 @@ stands.
 - [ ] Debounce and fold: one case per fault, a storm of lines is one wake
 
 **Point it at a service** (`dbee watch SERVICE` resolves the service per platform and watches its stream with the platform's critical-line default, `--pattern` to override: built 2026-10-09, live run on macOS and Windows next)
-- [ ] `dbee watch SERVICE`: works out the service's log source and manager on its own (systemd unit / launchd label / Windows service name), with the critical-line patterns defaulted per platform (`crit|emerg|fatal|panic|segfault|Traceback|OOM|failed`) and overridable
-- [ ] `dbee.toml`: services, patterns, the mind, budgets, quiet hours; one file, no env sprawl
-- [ ] Install as a service itself: systemd unit, launchd plist, Windows service (or a scheduled task at boot); survives reboot, runs with the least rights the cures need
+- [x] `dbee watch SERVICE`: works out the service's log source and manager on its own (systemd unit / launchd label / Windows service name), with the critical-line patterns defaulted per platform (`crit|emerg|fatal|panic|segfault|Traceback|OOM|failed`) and overridable
+- [x] `dbee.toml`: services, patterns, the mind, its court, budgets, the case's 3 h bound; one file (2026-10-09; quiet hours still open)
+- [x] Install as a service itself: systemd unit, launchd plist, Windows service (or a scheduled task at boot); survives reboot, runs with the least rights the cures need
 
 **Looks and cures per platform**
 - [x] Read-only families for macOS (`log show`, `launchctl print`, `lsof`, `vm_stat`, `diskutil info`, `scutil --dns`, `security find-certificate`) and Windows (a PowerShell checker read by effect: read verbs and aliases, native tools with their write arguments, no call operator, no redirection but `2>$null`, no write methods, no secret stores) (2026-10-09, 61 tests)
@@ -52,7 +52,7 @@ stands.
 
 **Minds**
 - [x] The Hive's router (any model it serves), Claude, a file seat for a person (2026-10-09)
-- [ ] Any OpenAI-compatible endpoint (Ollama, LM Studio, llama-server, vLLM) by URL alone
+- [x] Any OpenAI-compatible endpoint (Ollama, LM Studio, llama-server, vLLM) by URL alone; streamed, ended by silence (120 s) not length (2026-10-09)
 - [ ] Per-phase reasoning effort for thinking models (2026-10-09 for the Hive; to generalize)
 
 **Reach the human**
@@ -76,15 +76,15 @@ stands alone, each reuses what the other installed (engines and models by
 sha256), neither requires the other.
 
 - [x] Wasp: the spec (2026-10-09)
-- [ ] Wasp phase 1: machine profile (RAM, VRAM per vendor, unified memory, WSL), GGUF facts by HTTP Range, model fit (gpu / moe-offload / partial / cpu) with lockouts and a recommendation, verified resumable downloads, the llama.cpp engine (pinned to the fleet's b11279), `wasp-look`
-- [ ] Wasp phase 2: the setup wizard kit (the Hive's pages and palette, the long-polled step runner, the window opener)
-- [ ] DBee Setup on it: Welcome → This machine → Choose a mind (recommended, fitting, locked with the reason; or a URL to a model already served; or Claude by key) → What to watch (services found on the machine) → Installing → Done
-- [ ] The ride-along model server: llama-server on loopback as a service, sized by the fit (ctx, slots, offload), restarted on failure (DBee watches its own engine too)
-- [ ] A private Python (python-build-standalone) carrying DBee, nothing touching the system Python
-- [ ] DBee itself as a service per platform, watching the chosen services
-- [ ] On a Hive machine: offer the Hive's router as the mind and reuse the Hive's engine and models; the Hive's installer reuses DBee's in turn
+- [x] Wasp phase 1: machine profile (RAM, VRAM per vendor, unified memory, WSL), GGUF facts by HTTP Range, model fit (gpu / moe-offload / partial / cpu) with lockouts and a recommendation, verified resumable downloads, the llama.cpp engine (pinned to the fleet's b11279), `wasp-look`
+- [x] Wasp phase 2: the setup wizard kit (the Hive's pages and palette, the long-polled step runner, the window opener)
+- [x] DBee Setup on it: Welcome → This machine → Choose a mind (recommended, fitting, locked with the reason; or a URL to a model already served; or Claude by key) → What to watch (services found on the machine) → Installing → Done
+- [x] The ride-along model server: llama-server on loopback as a service, sized by the fit (ctx, slots, offload), restarted on failure (DBee watches its own engine too)
+- [x] A private Python (python-build-standalone) carrying DBee, nothing touching the system Python
+- [x] DBee itself as a service per platform, watching the chosen services
+- [x] On a Hive machine: offer the Hive's router as the mind and reuse the Hive's engine and models; the Hive's installer reuses DBee's in turn
 - [ ] Release builds: `DBee Setup.exe` (Windows), a macOS app/dmg, a Linux AppImage or tarball; signed later
-- [ ] Driven end to end on all three (the keeper, 2026-10-09): a full install (the wizard and `--yes`), DBee waking on a real fault, and a clean **uninstall** on Linux, macOS and Windows, each on a frame the Hive's placer session confirms it can spare at the time; DBee's model server must never take a card the Hive is serving from or stop a node mid-job (on a Hive frame, prefer the Hive's own minds or the CPU). Cleared 2026-10-09 with these conditions: Linux in a throwaway systemd container on the 5080 frame, CPU-only, 6 GB cap, never the host (it holds her home seats); macOS on the MacBook (nothing of the placer's there) once the doctor's open case on it rests; Windows on DESKTOP with DBee's mind = the Hive's router, never a local llama-server (its 4 GB card holds her spare under a live check); nowhere: drone configs, `hive serve`, killing or restarting engines or drones, anything under ~/.hive; tell the placer session when uninstalling on DESKTOP
+- [ ] Driven end to end on all three (the keeper, 2026-10-09) — `--yes` done on all three 2026-10-09 (macOS: woke, cured, closed; Windows: woke, diagnosed, handed honestly; Linux: woke, the 4B misdiagnosed, its case kept); each uninstall clean, cases kept until `--purge`; the wizard path is next: a full install (the wizard and `--yes`), DBee waking on a real fault, and a clean **uninstall** on Linux, macOS and Windows, each on a frame the Hive's placer session confirms it can spare at the time; DBee's model server must never take a card the Hive is serving from or stop a node mid-job (on a Hive frame, prefer the Hive's own minds or the CPU). Cleared 2026-10-09 with these conditions: Linux in a throwaway systemd container on the 5080 frame, CPU-only, 6 GB cap, never the host (it holds her home seats); macOS on the MacBook (nothing of the placer's there) once the doctor's open case on it rests; Windows on DESKTOP with DBee's mind = the Hive's router, never a local llama-server (its 4 GB card holds her spare under a live check); nowhere: drone configs, `hive serve`, killing or restarting engines or drones, anything under ~/.hive; tell the placer session when uninstalling on DESKTOP
 - [ ] Wasp phase 4: the Hive's `swarm/wasp` moves onto the module (a Hive change, gated and deployed there)
 
 ## M2: Specialize for the Hive
@@ -106,6 +106,7 @@ sha256), neither requires the other.
 
 ## M4: Finetune (low priority)
 
+- [x] Every case on disk after every turn, with each call's kit, reply, reasoning and serving seat; `dbee export` as JSON lines; uninstall keeps the cases (2026-10-09)
 - [ ] A dataset from the sim: every case's transcript, its score, its grounded diagnosis, its verified cure (winning cases as targets, refusals as lessons)
 - [ ] A small model (the 4B class) trained on it, for the Hive's machines first
 - [ ] Measured against the base model on held-out scenarios: pass rate, unsafe acts (must stay 0), tokens
