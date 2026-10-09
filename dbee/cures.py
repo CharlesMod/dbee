@@ -86,6 +86,22 @@ def check_cure(cmd: str) -> str:
     return ""
 
 
+NOOP_VERBS = {"echo", "printf", "true", ":", "test", "sleep", "cat", "ls", "df", "date", "uptime"}
+
+
+def _noop(cmd: str) -> bool:
+    """A command that changes nothing on the machine (an echo dressed as an undo)."""
+    for seg in re.split(r"\s*(?:;|&&|\|\||\|)\s*", cmd):
+        try:
+            toks = shlex.split(seg)
+        except ValueError:
+            return False
+        toks = [t for t in toks if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", t)]
+        if toks and toks[0].rsplit("/", 1)[-1] not in NOOP_VERBS:
+            return False
+    return True
+
+
 @dataclass
 class Cure:
     name: str                 # a runbook name, or "written:<digest>"
@@ -96,14 +112,24 @@ class Cure:
     source: str = "written"   # "runbook" | "written" | "casebook"
     page: str = ""
 
+    @property
+    def irreversible(self) -> bool:
+        """The mind said plainly there is no undo (`none: <why>`). Allowed, and
+        counted: a reversible shape (mv aside, stop the writer) scores better."""
+        return bool(re.match(r"^\s*none\s*:\s*\S", self.undo or ""))
+
     def problems(self) -> list[str]:
         out = []
         if (w := check_cure(self.command)):
             out.append(f"command: {w}")
         if not self.undo.strip():
-            out.append("undo: a cure without an undo is not a cure")
+            out.append("undo: name the undo, or say `none: <why nothing can restore it>`")
+        elif self.irreversible:
+            pass
         elif (w := check_cure(self.undo)):
             out.append(f"undo: {w}")
+        elif _noop(self.undo):
+            out.append("undo: that does nothing; name a real undo (mv back, stop/start, restore the file) or say `none: <why>`")
         if not self.verify.strip():
             out.append("verify: a cure names how it will be checked")
         elif (w := looks.check(self.verify)):
