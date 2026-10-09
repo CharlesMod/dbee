@@ -86,11 +86,18 @@ class Case:
     mind_s: float = 0.0
     turns: int = 0
     closed: float = 0.0
+    mind: str = ""                                       # the model that answered
+    platform: str = ""
+    turn_log: list = field(default_factory=list)         # one per call: the kit offered, its reply, timing
 
     def save(self, root: Path) -> Path:
+        """Whole or not at all: written beside, then renamed over, after every turn,
+        so a case cut short (a crash, a stop, a torn-down machine) keeps what it saw."""
         root.mkdir(parents=True, exist_ok=True)
         p = root / f"{self.id}.json"
-        p.write_text(json.dumps(asdict(self), indent=1, default=str))
+        tmp = p.with_suffix(".json.part")
+        tmp.write_text(json.dumps(asdict(self), indent=1, default=str))
+        os.replace(tmp, p)
         return p
 
 
@@ -121,10 +128,13 @@ class Doctor:
         precedents = self.casebook.precedents(sig)
         msgs = [{"role": "system", "content": SYSTEM},
                 {"role": "user", "content": self._opening(wake, first, precedents, prior)}]
+        case.transcript = msgs                               # what the mind saw and said, turn by turn
+        case.mind, case.platform = getattr(self.mind, "name", ""), self.patient.platform.name
         phase = "triage"
         seen: dict[str, int] = {}
         try:
             while True:
+                case.save(self.home / "cases")
                 if case.turns >= LOOK_BUDGET + CURE_BUDGET + 6:
                     case.end, case.finding = "budget", "the turn budget ended the case"
                     break
@@ -203,7 +213,6 @@ class Doctor:
             case.end, case.finding = "error", f"{type(e).__name__}: {e}"
             self.say(f"[{case.id}] error: {e}")
         case.closed = time.time()
-        case.transcript = msgs                               # what the mind saw and said, turn by turn
         if case.diagnosis and case.cures:
             last = case.cures[-1]
             self.casebook.record(case=case.id, patient=case.patient, sig=sig, cause=case.diagnosis["cause"],
@@ -229,6 +238,12 @@ class Doctor:
         case.tokens_in += r.tokens_in
         case.tokens_out += r.tokens_out
         case.mind_s += r.seconds
+        rec = {"turn": case.turns, "phase": phase, "effort": effort, "tools": [t["function"]["name"] for t in tools],
+               "at": len(msgs), "seconds": round(r.seconds, 2), "tokens_in": r.tokens_in, "tokens_out": r.tokens_out,
+               "calls": r.tool_calls, "text": r.text, "reasoning": r.reasoning}
+        if msgs is not case.transcript:
+            rec["context"] = msgs[len(case.transcript):]     # a side call (a draft checked) over the transcript so far
+        case.turn_log.append(rec)
         return r
 
     def _diagnose_again(self, case: Case, msgs: list, tc: dict, draft: dict) -> dict | None:
@@ -273,8 +288,10 @@ class Doctor:
             cmds = ["uptime", "df -Ph", "free -m"]
             if service:
                 cmds = plat.first_looks(service) + cmds
-                prog = self._unit_script(service)
+                prog, text = self._unit_program(service)
                 if prog:
+                    cmds.append(f"ls -lL {prog}")          # its mode: a program that cannot run is 203/EXEC
+                if text:
                     cmds.append(f"head -80 {prog}")
             elif wake.kind == "health_miss":
                 cmds = ["systemctl --failed --no-pager", "ss -ltnp"] + cmds
@@ -354,16 +371,16 @@ class Doctor:
             if snap["cure"] == n:
                 self.patient.run(f"cp -a {shlex.quote(snap['copy'])} {shlex.quote(snap['path'])}")
 
-    def _unit_script(self, unit: str) -> str:
-        """The program a unit runs, when it is a script a person could read (text,
-        not a binary): a unit that dies silently is often only explained there."""
+    def _unit_program(self, unit: str) -> tuple[str, bool]:
+        """The program a unit runs, and whether it is a script a person could read
+        (text, not a binary): a unit that dies silently is often only explained there."""
         _, out = looks.look(self.patient, f"systemctl show -p ExecStart --value {unit}")
         m = re.search(r"path=(\S+)", out) or re.search(r"^(/\S+)", out.strip())
         if not m:
-            return ""
+            return "", False
         path = m.group(1).rstrip(";")
         _, kind = looks.look(self.patient, f"file -b {path}")
-        return path if "text" in kind.lower() else ""
+        return path, "text" in kind.lower()
 
     def _opening(self, wake: Wake, first: str, precedents: list[dict], prior: "Case | None" = None) -> str:
         plat = self.patient.platform
@@ -551,3 +568,33 @@ def wake_from(kind: str, what: str, evidence: str = "") -> Wake:
 
 
 _ = re  # keep re for future shape checks
+
+
+def export_cases(home: Path, out, *, won_only: bool = False) -> int:
+    """Every case under `home` as one JSON line for training: the conversation in
+    OpenAI chat form (`messages`), the full tool definitions, each call's own kit
+    and reply (`turns`: a turn's sample is messages[:at] with its tools), and the
+    outcome to label it by. `won_only` keeps the cases closed with a verify that
+    passed. Returns the number written."""
+    n = 0
+    for p in sorted((Path(home) / "cases").glob("*.json")):
+        try:
+            c = json.loads(p.read_text())
+        except (OSError, ValueError):
+            continue
+        cures = c.get("cures") or []
+        won = c.get("end") == "closed" and bool(cures) and cures[-1].get("verify_code") == 0
+        if won_only and not won:
+            continue
+        rec = {"messages": c.get("transcript") or [], "tools": TOOLS, "turns": c.get("turn_log") or [],
+               "meta": {"case": c.get("id"), "mind": c.get("mind", ""), "platform": c.get("platform", ""),
+                        "patient": c.get("patient"), "wake": c.get("wake"), "end": c.get("end"),
+                        "won": won, "finding": c.get("finding"), "diagnosis": c.get("diagnosis"),
+                        "cures": [{"command": (x.get("cure") or {}).get("command"), "verify_code": x.get("verify_code"),
+                                   "undone": x.get("undone")} for x in cures],
+                        "refusals": len(c.get("refusals") or []), "tokens_in": c.get("tokens_in"),
+                        "tokens_out": c.get("tokens_out"), "mind_s": c.get("mind_s"),
+                        "complete": bool(c.get("closed"))}}
+        out.write(json.dumps(rec, default=str) + "\n")
+        n += 1
+    return n

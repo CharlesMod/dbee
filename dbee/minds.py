@@ -36,6 +36,7 @@ class Reply:
     seconds: float = 0.0
     mind: str = ""
     raw: dict | None = None
+    reasoning: str = ""                              # a thinking model's reasoning, when the server returns it
 
 
 def _secret(name: str) -> str:
@@ -80,7 +81,7 @@ def _post_stream(url: str, body: dict, headers: dict | None = None, silence_s: f
 
 def _assemble(lines) -> dict:
     """OpenAI stream chunks (`data: {...}` lines) into one chat completion."""
-    text, calls, usage, finish = [], {}, {}, None
+    text, think, calls, usage, finish = [], [], {}, {}, None
     for raw in lines:
         line = raw.decode("utf-8", "replace").strip() if isinstance(raw, bytes) else raw.strip()
         if not line.startswith("data:"):
@@ -98,6 +99,8 @@ def _assemble(lines) -> dict:
             d = c.get("delta") or {}
             if d.get("content"):
                 text.append(d["content"])
+            if d.get("reasoning_content"):
+                think.append(d["reasoning_content"])
             for tc in d.get("tool_calls") or []:
                 slot = calls.setdefault(tc.get("index", len(calls)), {"id": "", "type": "function",
                                                                        "function": {"name": "", "arguments": ""}})
@@ -108,6 +111,8 @@ def _assemble(lines) -> dict:
                 slot["function"]["arguments"] += fn.get("arguments") or ""
             finish = c.get("finish_reason") or finish
     msg = {"role": "assistant", "content": "".join(text)}
+    if think:
+        msg["reasoning_content"] = "".join(think)
     if calls:
         msg["tool_calls"] = [calls[k] for k in sorted(calls)]
     return {"choices": [{"message": msg, "finish_reason": finish}], "usage": usage}
@@ -148,7 +153,7 @@ def openai_reply(out: dict, seconds: float, name: str) -> "Reply":
         except ValueError:
             args = {"_raw": fn.get("arguments")}
         calls.append({"id": tc.get("id", ""), "name": fn.get("name", ""), "arguments": args})
-    return Reply(text=msg.get("content") or "", tool_calls=calls,
+    return Reply(text=msg.get("content") or "", tool_calls=calls, reasoning=msg.get("reasoning_content") or "",
                  tokens_in=int(usage.get("prompt_tokens") or 0),
                  tokens_out=int(usage.get("completion_tokens") or 0),
                  seconds=seconds, mind=name, raw=out)

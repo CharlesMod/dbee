@@ -52,6 +52,7 @@ var thinking = map[string]bool{"swift-qwen3.8-27b-iq3xs": true}
 // Setup is DBee Setup as a wizard.Product. Every outside thing it touches is
 // a field, so tests give fakes and a real run gets the defaults from newSetup.
 type Setup struct {
+	Purge   bool // uninstall removes the cases too
 	Root    string
 	Home    string
 	Profile profile.Profile

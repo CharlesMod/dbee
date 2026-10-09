@@ -139,6 +139,13 @@ at once as the minds have seats, so a whole tier takes minutes.
   own winning cases, especially for the Hive's machines, could take the
   4B's 50% a lot further.
 
+  Every case is training data from its first turn: it is written to disk
+  after each turn (`<home>/cases/<id>.json`, whole or not at all), with the
+  conversation in OpenAI chat form, each call's own kit of tools, its reply,
+  any reasoning the model returned, and the outcome. `dbee export` turns a
+  home into JSON lines (`--won` keeps the cases closed with a verify that
+  passed), and an uninstall keeps the cases unless told `--purge`.
+
 ---
 
 ## Quick start
@@ -158,6 +165,9 @@ python3 -m dbee --mind claude:claude-sonnet-5-5 sim t1
 
 # sleep on a real machine and treat what wakes you
 python3 -m dbee --mind gemma-4-26b-a4b-iq3s watch --patient local
+
+# every case as JSON lines for training (messages, tools, each turn's kit, the outcome)
+python3 -m dbee export --home ~/.dbee --won --out cases.jsonl
 
 # sit in the doctor's seat yourself (each turn written to a file, you answer)
 python3 -m dbee --mind file:runs/me/case1 sim port-taken

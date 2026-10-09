@@ -28,8 +28,22 @@ func (s *Setup) Uninstall(ctx context.Context, out io.Writer) error {
 		fmt.Fprintf(out, "removed service %s\n", n)
 	}
 	if _, err := os.Stat(root); err == nil {
-		if !exists(filepath.Join(root, "dbee.toml")) && !exists(filepath.Join(root, "state.json")) && !exists(filepath.Join(root, "app", "dbee")) {
-			errs = append(errs, fmt.Errorf("%s does not look like a DBee folder (no dbee.toml, state.json or app); left alone", root))
+		cases := casesIn(filepath.Join(root, "home"))
+		if !exists(filepath.Join(root, "dbee.toml")) && !exists(filepath.Join(root, "state.json")) && !exists(filepath.Join(root, "app", "dbee")) && !exists(filepath.Join(root, "home", "cases")) {
+			errs = append(errs, fmt.Errorf("%s does not look like a DBee folder (no dbee.toml, state.json, app or cases); left alone", root))
+		} else if cases > 0 && !s.Purge {
+			// the cases are the doctor's record and the training data it gathered: kept
+			// unless the person says otherwise; a reinstall here picks them up again
+			ents, _ := os.ReadDir(root)
+			for _, e := range ents {
+				if e.Name() == "home" {
+					continue
+				}
+				if err := os.RemoveAll(filepath.Join(root, e.Name())); err != nil {
+					errs = append(errs, err)
+				}
+			}
+			fmt.Fprintf(out, "removed DBee from %s; kept its %d cases in %s (--uninstall --purge removes them)\n", root, cases, filepath.Join(root, "home"))
 		} else if err := os.RemoveAll(root); err != nil {
 			errs = append(errs, err)
 		} else {
@@ -40,4 +54,10 @@ func (s *Setup) Uninstall(ctx context.Context, out io.Writer) error {
 		fmt.Fprintf(out, "kept %s (it holds a key; delete it yourself if you want it gone)\n", SecretsPath(s.Home))
 	}
 	return errors.Join(errs...)
+}
+
+// casesIn counts the cases a doctor's home holds.
+func casesIn(home string) int {
+	m, _ := filepath.Glob(filepath.Join(home, "cases", "*.json"))
+	return len(m)
 }

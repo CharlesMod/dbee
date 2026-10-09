@@ -424,3 +424,28 @@ func TestTheHivesMindIsAModelItsCourtServes(t *testing.T) {
 		t.Fatalf("a court that cannot say: got %q", got)
 	}
 }
+
+func TestUninstallKeepsTheCasesUnlessPurged(t *testing.T) {
+	b := newBox(t)
+	s := b.setup(cpuOnly8GB, nil)
+	if out, err := install(t, s, localAnswers()); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	c := filepath.Join(b.root, "home", "cases", "20261009-212231-17bc.json")
+	os.MkdirAll(filepath.Dir(c), 0o755)
+	os.WriteFile(c, []byte(`{"id":"20261009-212231-17bc"}`), 0o644)
+	var out bytes.Buffer
+	if err := s.Uninstall(context.Background(), &out); err != nil {
+		t.Fatalf("%v\n%s", err, out.String())
+	}
+	if !exists(c) || exists(filepath.Join(b.root, "app")) || exists(filepath.Join(b.root, "dbee.toml")) {
+		t.Fatalf("the cases stay and the rest goes:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "kept its 1 cases") {
+		t.Fatalf("the uninstall says what it kept:\n%s", out.String())
+	}
+	s.Purge = true
+	if err := s.Uninstall(context.Background(), &out); err != nil || exists(b.root) {
+		t.Fatalf("--purge removes the cases and the folder: %v\n%s", err, out.String())
+	}
+}

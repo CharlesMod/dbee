@@ -52,8 +52,20 @@ def main(argv=None) -> int:
     t = sub.add_parser("treat"); t.add_argument("--patient", default="local"); t.add_argument("--wake", required=True, help="kind:what, e.g. unit_failed:nginx.service"); t.add_argument("--evidence", default="")
     s = sub.add_parser("sim"); s.add_argument("pick", nargs="?", default="all"); s.add_argument("--keep", action="store_true"); s.add_argument("--repeat", type=int, default=1, help="run each scenario N times (a pass rate, not one coin flip)"); s.add_argument("--jobs", type=int, default=int(os.environ.get("DBEE_JOBS", "0")), help="scenarios at once, each its own patient; 0 (the default) runs every picked scenario at once, and calls past the mind's free seats wait at the router"); s.add_argument("--runs", default=str(ROOT / "runs"))
     c = sub.add_parser("check"); c.add_argument("cmd")
+    ex = sub.add_parser("export", help="every case as JSON lines for training (messages, tools, each turn's kit, the outcome)"); ex.add_argument("--config", default=os.environ.get("DBEE_CONFIG", ""), help="a dbee.toml naming the doctor's home"); ex.add_argument("--home", default="", help="the doctor's home (cases/); the config's or ~/.dbee otherwise"); ex.add_argument("--out", default="-", help="a file; - is stdout"); ex.add_argument("--won", action="store_true", help="only cases closed with a verify that passed")
     v = sub.add_parser("validate"); v.add_argument("pick", nargs="?", default="all")
     a = ap.parse_args(argv)
+
+    if a.verb == "export":
+        from .doctor import export_cases
+        home = Path(a.home).expanduser() if a.home else None
+        if home is None and a.config:
+            from . import config as _config
+            home = _config.load(a.config).home
+        out = sys.stdout if a.out == "-" else open(a.out, "w")
+        n = export_cases(home or HOME, out, won_only=a.won)
+        print(f"{n} cases", file=sys.stderr)
+        return 0
 
     if a.verb == "check":
         print("look:", looks.check(a.cmd) or "allowed")

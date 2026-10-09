@@ -6,7 +6,7 @@
 //	dbee-setup --no-window          serve the window's address only
 //	dbee-setup --yes [--model NAME | --mind-url URL[#model] | --claude | --hive]
 //	           [--watch svc,svc | --whole-machine] [--root DIR]
-//	dbee-setup --uninstall [--root DIR]
+//	dbee-setup --uninstall [--purge] [--root DIR]
 //
 // Build: ./stage.sh && CGO_ENABLED=0 go build -o dbee-setup .
 package main
@@ -88,7 +88,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, env func(
 	root := fs.String("root", "", "the install folder")
 	noWindow := fs.Bool("no-window", false, "serve the setup only; print its address")
 	dbeeSrc := fs.String("dbee-src", "", "a DBee checkout (with dbee/ in it) to install instead of the copy in this binary")
-	uninstall := fs.Bool("uninstall", false, "stop and remove DBee's services and folder")
+	uninstall := fs.Bool("uninstall", false, "stop and remove DBee's services and folder (its cases are kept)")
+	purge := fs.Bool("purge", false, "with --uninstall: remove the cases too")
 	version := fs.Bool("version", false, "print the version")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -103,6 +104,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, env func(
 		return 1
 	}
 	if *uninstall {
+		s.Purge = *purge
 		if err := s.Uninstall(ctx, stdout); err != nil {
 			fmt.Fprintln(stderr, "uninstall:", err)
 			return 1
