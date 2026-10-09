@@ -2,4 +2,4 @@ module github.com/CharlesMod/dbee/installer
 
 go 1.23
 
-require github.com/CharlesMod/wasp v0.0.0-20261009201223-2c01440760a0
+require github.com/CharlesMod/wasp v0.0.0-20261009202616-1df91a484243
