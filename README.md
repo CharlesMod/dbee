@@ -144,6 +144,8 @@ at once as the minds have seats, so a whole tier takes minutes.
 ## Quick start
 
 ```bash
+# install DBee on this machine with its setup window (needs Go): ./installer/stage.sh && (cd installer && CGO_ENABLED=0 go build -o dbee-setup . && ./dbee-setup)
+
 # build the patient image (systemd, journald, nginx, cron)
 podman build -t dbee/patient:ubuntu24 -f sandbox/Containerfile sandbox
 
