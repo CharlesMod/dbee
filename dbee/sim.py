@@ -37,15 +37,17 @@ def load_scenario(path: Path) -> dict:
 
 
 def arm(patient, sc: dict, q: Queue) -> list:
-    ws = [UnitWatcher(patient, q)]
+    # the journal is read from the patient's own clock as arming began, so a line
+    # the seed writes before journalctl attaches is still read: no wait to attach
+    since = "@" + (patient.run("date +%s").out.strip() or "0")
+    ws = [UnitWatcher(patient, q, since=since)]
     wake = sc.get("wake") or {}
     if wake.get("kind") == "health_miss":
         ws.append(HealthWatcher(patient, q, wake["url"], every_s=3))
     if wake.get("kind") == "line":
-        ws.append(LineWatcher(patient, q, wake["pattern"]))
+        ws.append(LineWatcher(patient, q, wake["pattern"], since=since))
     for w in ws:
         w.start()
-    time.sleep(1.5)   # journalctl -f attached
     return ws
 
 

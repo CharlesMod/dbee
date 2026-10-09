@@ -149,15 +149,17 @@ class FileWatcher(threading.Thread):
 
 
 class LineWatcher(threading.Thread):
-    def __init__(self, patient, q: Queue, pattern: str, *, quiet_s: float = 60):
+    def __init__(self, patient, q: Queue, pattern: str, *, quiet_s: float = 60, since: str = ""):
         super().__init__(daemon=True)
         self.patient, self.q, self.pat, self.quiet = patient, q, re.compile(pattern), quiet_s
+        self.since = since
         self.seen: dict[str, float] = {}
         self.stop = threading.Event()
         self.proc = None
 
     def run(self):
-        self.proc = self.patient.stream("journalctl -f -o cat --no-pager -n 0 2>/dev/null")
+        since = f" --since={self.since}" if self.since else ""
+        self.proc = self.patient.stream(f"journalctl -f -o cat --no-pager -n 0{since} 2>/dev/null")
         for line in self.proc.stdout:
             if self.stop.is_set():
                 break

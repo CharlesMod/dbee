@@ -18,7 +18,7 @@ stands.
 - [x] Tier-1 scenarios, validated with no mind (2026-10-09, f122865)
 - [x] Harness, round 1: close check, reopen on recurrence, per-phase effort, `--jobs` (2026-10-09)
 - [x] Harness, round 2 (from the doctor's seat): oneshot units judged by result, look chains judged by effect, grounded diagnoses, pre-cure backups, what-changed incl. transient units, unit scripts read, the patient's biasing comment removed (2026-10-09)
-- [ ] Fast sim: each scenario declares `recur_s`; seeds trigger their fault now instead of waiting on a clock; `--repeat N` for pass rates; all scenarios at once
+- [x] Fast sim: each scenario declares `recur_s`; seeds trigger their fault now instead of waiting on a clock; `--repeat N` for pass rates; all scenarios at once (2026-10-09: the last clock, a sleep for journalctl to attach, replaced by reading from the patient's clock as arming began; validated 8/10 with oom-service held; disk-full-root missed its wake once in the full sweep and passed alone twice: a flake to watch)
 - [ ] The 4B, massively parallel, `--repeat 3`: a pass rate per scenario
 - [ ] Lift the oom-service hold once the Hive's drone counts only its own engine's OOM kills (the Hive's fix, in flight elsewhere)
 
