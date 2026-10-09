@@ -27,6 +27,7 @@ from .casebook import Casebook
 from .watch import Wake
 
 LOOK_BUDGET = 14
+WRITES = re.compile(r"writes|redirection|not a read-only family")
 CURE_BUDGET = 2
 
 SYSTEM = """You are DBee, a doctor for machines. A fault woke you on the patient below. Work as a careful engineer:
@@ -73,7 +74,8 @@ class Case:
     end: str = ""                                        # closed | handed | stalled | budget | error
     finding: str = ""
     hand: dict | None = None
-    close_said: dict | None = None                       # {cause, cause_removed, finding} as the mind said it
+    close_said: dict | None = None
+    decide_now: bool = False                             # going round: the next turn may only decide                       # {cause, cause_removed, finding} as the mind said it
     reopened_from: str = ""                              # the case this one reopens
     tokens_in: int = 0
     tokens_out: int = 0
@@ -137,9 +139,16 @@ class Doctor:
                     if name == "look":
                         out = self._do_look(case, a.get("cmd", ""), seen)
                         if out is None:
-                            case.end, case.finding = "stalled", "the same look three times: thinking went round"
-                            break
+                            if case.decide_now:
+                                case.end, case.finding = "stalled", "went round again after being asked to decide"
+                                break
+                            case.decide_now = True
+                            out = ("refused: you have asked this a third time; its answer will not change. "
+                                   "Decide now from what you have read: " +
+                                   ("`diagnose` the mechanism, or `hand` it over." if phase == "triage"
+                                    else "`cure`, `close` if the last verify was green, or `hand` it over."))
                     elif name == "diagnose":
+                        case.decide_now = False
                         if phase == "triage" and self.effort.get("diagnose") and self.effort.get("diagnose") != self.effort.get("triage"):
                             # the diagnosis is made at the diagnose effort: the light turn's draft is
                             # put back to the mind once, thinking at that effort, to confirm or revise
@@ -150,6 +159,7 @@ class Doctor:
                         phase = "treat"
                         out = self._treat_brief(sig, precedents)
                     elif name == "cure":
+                        case.decide_now = False
                         if phase != "treat":
                             out = "refused: name the mechanism first (`diagnose`), then cure."
                             case.refusals.append({"kind": "cure", "what": a.get("command", ""), "why": "before diagnosis"})
@@ -191,8 +201,10 @@ class Doctor:
 
     # ------------------------------------------------------------- the pieces
     def _ask(self, case: Case, msgs, phase):
-        if phase == "triage" and len(case.looks) >= LOOK_BUDGET:
+        if phase == "triage" and (len(case.looks) >= LOOK_BUDGET or case.decide_now):
             tools = [t for t in TOOLS if t["function"]["name"] in ("diagnose", "hand")]
+        elif phase == "treat" and case.decide_now:
+            tools = [t for t in TOOLS if t["function"]["name"] in ("cure", "close", "hand")]
         else:
             tools = TOOLS if phase == "treat" else [t for t in TOOLS if t["function"]["name"] in ("look", "diagnose", "hand")]
         effort = self.effort.get(phase, "")
@@ -296,6 +308,9 @@ class Doctor:
         case.looks.append({"cmd": cmd, "code": code, "out": out[-2000:], "s": round(time.time() - t0, 2)})
         if code == 126:
             case.refusals.append({"kind": "look", "what": cmd, "why": out})
+            if WRITES.search(out):
+                out += ("\n[a look only reads. To change the machine, name the mechanism with `diagnose`; "
+                        "then a `cure` carries the change, its undo and its verify.]")
         note = "\n[you have run this exact look before; its answer has not changed. Read it, or look elsewhere.]" if n == 2 else ""
         left = LOOK_BUDGET - len(case.looks)
         budget = (f"\n[looks left: {left}]" if left > 0 else
