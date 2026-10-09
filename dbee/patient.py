@@ -32,6 +32,7 @@ class Patient:
     def run(self, cmd: str, *, timeout: float = 60, user: str = "root", input: str | None = None) -> Result:
         try:
             p = subprocess.run(self.argv(cmd, user, interactive=input is not None), capture_output=True, text=True,
+                               encoding="utf-8", errors="replace",
                                timeout=timeout, input=input,
                                stdin=None if input is not None else subprocess.DEVNULL)
         except subprocess.TimeoutExpired as e:
@@ -43,7 +44,7 @@ class Patient:
     def stream(self, cmd: str) -> subprocess.Popen:
         """A long-running command whose stdout is read line by line (journalctl -f)."""
         return subprocess.Popen(self.argv(cmd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                text=True, bufsize=1, stdin=subprocess.DEVNULL)
+                                text=True, encoding="utf-8", errors="replace", bufsize=1, stdin=subprocess.DEVNULL)
 
 
 class Local(Patient):
