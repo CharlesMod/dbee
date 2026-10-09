@@ -84,6 +84,7 @@ sha256), neither requires the other.
 - [ ] DBee itself as a service per platform, watching the chosen services
 - [ ] On a Hive machine: offer the Hive's router as the mind and reuse the Hive's engine and models; the Hive's installer reuses DBee's in turn
 - [ ] Release builds: `DBee Setup.exe` (Windows), a macOS app/dmg, a Linux AppImage or tarball; signed later
+- [ ] Driven end to end on all three (the keeper, 2026-10-09): a full install (the wizard and `--yes`), DBee waking on a real fault, and a clean **uninstall** on Linux, macOS and Windows, each on a frame the Hive's placer session confirms it can spare at the time; DBee's model server must never take a card the Hive is serving from or stop a node mid-job (on a Hive frame, prefer the Hive's own minds or the CPU)
 - [ ] Wasp phase 4: the Hive's `swarm/wasp` moves onto the module (a Hive change, gated and deployed there)
 
 ## M2: Specialize for the Hive
