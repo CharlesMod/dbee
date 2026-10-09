@@ -33,6 +33,14 @@ found five faults in the harness and none that a sim would have shown:
   implied. A Linux score on a fault of exec permissions in that container is
   partly the container's.
 
+- **Grounding let a guess through.** The rerun put the program's mode in
+  the 4B's first looks (`-rw-r--r-- /usr/sbin/cron`) and it still blamed
+  `$EXTRA_OPTS` from turn 1, which is the model's miss: systemd's own status
+  line puts `$EXTRA_OPTS` beside `status=203/EXEC`. Its diagnosis quoted
+  evidence it had never read, was refused twice, and was recorded on the third
+  try, because grounding allowed two refusals. Now no ungrounded diagnosis is
+  ever recorded: after three, the case is handed to a person.
+
 Cases are now written after every turn and export as training data (`dbee
 export`); the Linux case above was lost because it was only written at its end.
 

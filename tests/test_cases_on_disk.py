@@ -61,3 +61,34 @@ def test_a_case_cut_short_is_on_disk_with_what_the_mind_saw_and_exports(tmp_path
     assert rec["meta"]["won"] is False and rec["meta"]["complete"] is False
     assert {t["function"]["name"] for t in rec["tools"]} >= {"look", "diagnose", "cure", "hand", "close"}
     assert export_cases(tmp_path, io.StringIO(), won_only=True) == 0
+
+
+class _Diagnoser:
+    """Diagnoses every turn, quoting `quotes` in turn (the last repeats)."""
+    name = "fake"
+
+    def __init__(self, *quotes):
+        self.quotes, self.n = list(quotes), 0
+
+    def chat(self, msgs, tools=None, max_tokens=0, effort=""):
+        q = self.quotes[min(self.n, len(self.quotes) - 1)]
+        self.n += 1
+        names = [t["function"]["name"] for t in tools or []]
+        if "diagnose" not in names:      # past the diagnosis: hand it over, the test is done
+            return Reply(text="", tool_calls=[{"id": f"h{self.n}", "name": "hand", "arguments": {"step": "x", "finding": "x"}}])
+        return Reply(text="", tool_calls=[{"id": f"d{self.n}", "name": "diagnose",
+                                           "arguments": {"cause": "EXTRA_OPTS is unset", "evidence": q}}])
+
+
+def test_no_ungrounded_diagnosis_is_ever_recorded(tmp_path):
+    doc = Doctor(_Patient(), _Diagnoser("cron: EXTRA_OPTS evaluates to an empty string"), home=tmp_path)
+    case = doc.treat(Wake("unit_failed", "cron.service", evidence="status=203/EXEC"), case_id="c-2")
+    assert case.diagnosis is None and case.end == "handed" and case.ungrounded == 3
+    assert "no diagnosis could be grounded" in case.hand["step"]
+
+
+def test_a_diagnosis_grounded_on_a_later_try_is_recorded(tmp_path):
+    doc = Doctor(_Patient(), _Diagnoser("cron: EXTRA_OPTS evaluates to an empty string",
+                                        "-rw-r--r-- 1 root root 60080 Mar 31  2024 /usr/sbin/cron"), home=tmp_path)
+    case = doc.treat(Wake("unit_failed", "cron.service", evidence="status=203/EXEC"), case_id="c-3")
+    assert case.diagnosis and case.diagnosis["evidence"].startswith("-rw-r--r--") and case.ungrounded == 1

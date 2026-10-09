@@ -30,6 +30,7 @@ from .watch import Wake
 LOOK_BUDGET = 14
 WRITES = re.compile(r"writes|redirection")
 CURE_BUDGET = 2
+UNGROUNDED_LIMIT = 3          # ungrounded diagnoses refused before the case is handed to a person
 
 SYSTEM = """You are DBee, a doctor for machines. A fault woke you on the patient below. Work as a careful engineer:
 read until you can name the MECHANISM (what is failing and why, not just the symptom), then apply ONE cure you can undo, then confirm it took.
@@ -167,10 +168,18 @@ class Doctor:
                             # the diagnosis is made at the diagnose effort: the light turn's draft is
                             # put back to the mind once, thinking at that effort, to confirm or revise
                             a = self._diagnose_again(case, msgs, tc, a) or a
-                        if not self._grounded(a.get("evidence", ""), first, case) and case.ungrounded < 2:
+                        if not self._grounded(a.get("evidence", ""), first, case):
+                            # never recorded: a diagnosis rests on a line the doctor read, or there is none
                             case.ungrounded += 1
                             case.refusals.append({"kind": "diagnose", "what": a.get("evidence", "")[:300],
                                                   "why": "evidence not in anything read"})
+                            if case.ungrounded >= UNGROUNDED_LIMIT:
+                                case.hand = {"step": "a person reads the case: no diagnosis could be grounded in what was read",
+                                             "finding": f"the mind's diagnosis ({a.get('cause', '')[:200]}) rested on evidence "
+                                                        f"found in nothing it read, {case.ungrounded} times"}
+                                case.end, case.finding = "handed", case.hand["finding"]
+                                self.say(f"[{case.id}] handed: {case.hand['step']}")
+                                break
                             msgs.append({"role": "tool", "tool_call_id": tc.get("id", ""), "name": name,
                                          "content": "refused: the evidence is not in anything you have read. "
                                                     "Quote a line exactly as a look printed it, or look for the line that shows the mechanism."})
