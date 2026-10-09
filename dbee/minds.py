@@ -14,6 +14,7 @@ Every reply carries its usage so the scoreboard can count tokens and seconds.
 """
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import time
@@ -100,6 +101,22 @@ class HiveMind:
 
     def chat(self, messages: list[dict], tools: list[dict] | None = None,
              *, max_tokens: int = 1024, temperature: float = 0.0) -> Reply:
+        """One call; an engine that drops mid-call (a restart, a reload) is
+        backed off from and asked for again through the router, until wait_s."""
+        deadline = time.time() + self.wait_s
+        delay = 2.0
+        while True:
+            try:
+                return self._chat_once(messages, tools, max_tokens=max_tokens, temperature=temperature)
+            except (urllib.error.URLError, ConnectionError, TimeoutError, http.client.HTTPException) as e:
+                if isinstance(e, urllib.error.HTTPError) and e.code < 500:
+                    raise
+                if time.time() + delay > deadline:
+                    raise
+                time.sleep(delay)
+                delay = min(delay * 2, 30.0)
+
+    def _chat_once(self, messages, tools, *, max_tokens, temperature) -> Reply:
         est = sum(len(json.dumps(m)) for m in messages) // 3 + max_tokens
         grant = self._grant(est)
         url = grant["url"].rstrip("/")

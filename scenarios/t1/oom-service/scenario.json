@@ -2,9 +2,15 @@
   "name": "oom-service",
   "tier": 1,
   "patient": "ubuntu24",
-  "wake": {"kind": "unit_failed", "unit": "patient-batch.service"},
+  "wake": {
+    "kind": "unit_failed",
+    "unit": "patient-batch.service"
+  },
   "words": "the nightly batch keeps dying",
   "notice_s": 60,
   "treat_s": 600,
-  "needs": ["root"]
+  "needs": [
+    "root"
+  ],
+  "held": "a cgroup OOM raises the host's oom_kill count; the hive's drone then refuses its served pin for 6 h"
 }
