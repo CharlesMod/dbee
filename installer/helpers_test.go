@@ -106,6 +106,11 @@ func (b *fakeBox) svcRun(ctx context.Context, name string, args ...string) ([]by
 	b.runs = append(b.runs, name+" "+strings.Join(args, " "))
 	b.mu.Unlock()
 	if len(args) > 0 && strings.Contains(strings.Join(args, " "), " show ") || contains(args, "show") {
+		for _, a := range args {
+			if strings.HasSuffix(a, ".service") && !exists(filepath.Join(b.home, ".config", "systemd", "user", a)) {
+				return []byte("LoadState=not-found\nActiveState=inactive\nSubState=dead\n"), nil // as systemd says of a unit it has no file for
+			}
+		}
 		return []byte("LoadState=loaded\nActiveState=active\nSubState=running\nExecMainStatus=0\nResult=success\n"), nil
 	}
 	return nil, nil

@@ -449,3 +449,22 @@ func TestUninstallKeepsTheCasesUnlessPurged(t *testing.T) {
 		t.Fatalf("--purge removes the cases and the folder: %v\n%s", err, out.String())
 	}
 }
+
+func TestUninstallSaysOnlyWhatItRemoved(t *testing.T) {
+	b := newBox(t)
+	s := b.setup(cpuOnly8GB, nil)
+	var out bytes.Buffer
+	if err := s.Uninstall(context.Background(), &out); err != nil {
+		t.Fatalf("%v\n%s", err, out.String())
+	}
+	if strings.Contains(out.String(), "removed service") || !strings.Contains(out.String(), "no DBee folder at") {
+		t.Fatalf("nothing was installed, so nothing was removed:\n%s", out.String())
+	}
+	if out, err := install(t, s, localAnswers()); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	out.Reset()
+	if err := s.Uninstall(context.Background(), &out); err != nil || !strings.Contains(out.String(), "removed service dbee\n") {
+		t.Fatalf("an installed service is said removed: %v\n%s", err, out.String())
+	}
+}

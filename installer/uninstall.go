@@ -21,11 +21,14 @@ func (s *Setup) Uninstall(ctx context.Context, out io.Writer) error {
 	m := s.manager()
 	var errs []error
 	for _, n := range []string{DBeeService, MindService} {
-		if err := m.Uninstall(ctx, n); err != nil {
+		st, serr := m.Status(ctx, n)
+		if err := m.Uninstall(ctx, n); err != nil { // run even when absent: it clears what a broken install left
 			errs = append(errs, fmt.Errorf("removing service %s: %w", n, err))
 			continue
 		}
-		fmt.Fprintf(out, "removed service %s\n", n)
+		if serr != nil || st.Installed {
+			fmt.Fprintf(out, "removed service %s\n", n)
+		}
 	}
 	if _, err := os.Stat(root); err == nil {
 		cases := casesIn(filepath.Join(root, "home"))
@@ -49,6 +52,8 @@ func (s *Setup) Uninstall(ctx context.Context, out io.Writer) error {
 		} else {
 			fmt.Fprintf(out, "removed %s\n", root)
 		}
+	} else if os.IsNotExist(err) {
+		fmt.Fprintf(out, "no DBee folder at %s\n", root)
 	}
 	if HasSecret(s.Home, "ANTHROPIC_API_KEY") {
 		fmt.Fprintf(out, "kept %s (it holds a key; delete it yourself if you want it gone)\n", SecretsPath(s.Home))
