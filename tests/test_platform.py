@@ -205,3 +205,14 @@ def test_linux_events_still_wake_as_before():
     assert ev == {"kind": "unit_failed", "what": "patient-web.service", "evidence": "patient-web.service: Main process exited, code=exited, status=1/FAILURE"}
     crit = json.dumps({"MESSAGE": "write failed: No space left on device", "_SYSTEMD_UNIT": "patient-web.service"})
     assert P.LINUX.parse_event(crit, "patient-web.service")["kind"] == "line"
+
+
+def test_ordinary_looks_and_verifies_pass_on_every_platform():
+    # Live 2026-10-09: Linux's families were an empty table, which refused every
+    # look and every verify (`systemctl` is not on the read-only list).
+    from dbee.cures import check_verify
+    assert P.LINUX.check_look("systemctl status cron --no-pager") == ""
+    assert check_verify("systemctl is-active cron && test -x /usr/sbin/cron", P.LINUX) == ""
+    assert P.MACOS.check_look("launchctl print system/com.example.x") == ""
+    assert P.WINDOWS.check_look("Get-Service -Name Spooler") == ""
+    assert P.LINUX.check_look("systemctl restart cron") != ""

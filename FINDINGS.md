@@ -3,6 +3,18 @@
 What the simulator has taught about driving each mind. Newest first. A row is
 one run; the record is under `runs/<scenario>/<mind>/cases/`.
 
+## 2026-10-09 — every Linux look refused after M1 (a harness bug, fixed)
+
+From the M1 platform commit (89af5d7, 14:11) until this fix, the Linux
+platform's look families were an empty table rather than unset, and
+`looks.check` read an empty table as "no verb is allowed". Every look and every
+verify on a Linux patient was refused ("`systemctl` is not on the doctor's
+read-only list"). Found live: DBee Setup in a container, cron broken, the 4B
+proposing the right verify (`systemctl is-active cron`) round after round. A
+Linux sim score taken between those times measures the bug, not the mind;
+re-run before comparing. Pinned by
+`test_ordinary_looks_and_verifies_pass_on_every_platform`.
+
 ## 2026-10-09 — disk-full-root, gemma-4-26b-a4b (the hive's brain, 3 × 32k on a 5080)
 
 | run | woke | looks | cures | result | time | tokens | note |

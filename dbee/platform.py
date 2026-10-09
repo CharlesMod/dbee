@@ -50,7 +50,7 @@ def detect(patient) -> "Platform":
 class Platform:
     name: str
     shell: str                                   # "sh" | "powershell"
-    families: dict = field(default_factory=dict) # read-only verbs → their write-shaped arguments
+    families: dict | None = None  # read-only verbs → their write-shaped arguments; None is looks.FAMILIES
     never: list = field(default_factory=list)    # (regex, why): never a cure, however worded
     cure_verbs: set = field(default_factory=set)
     critical: str = ""                           # a critical line, by default
