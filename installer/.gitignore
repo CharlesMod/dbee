@@ -1,0 +1,4 @@
+payload/*
+!payload/.keep
+/dbee-setup
+/dbee-setup.exe
