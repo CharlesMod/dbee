@@ -22,7 +22,9 @@ class _Patient:
         if cmd.startswith("ls -lL"):
             return Result(0, "-rw-r--r-- 1 root root 60080 Mar 31  2024 /usr/sbin/cron")
         if cmd.startswith("file -b"):
-            return Result(0, "ELF 64-bit LSB pie executable")
+            return Result(127, "sh: 1: file: not found")     # a slim image has no `file`
+        if cmd.startswith("head -c 4"):
+            return Result(0, " 177   E   L   F\n")
         return Result(0, "")
 
 
@@ -51,6 +53,7 @@ def test_a_case_cut_short_is_on_disk_with_what_the_mind_saw_and_exports(tmp_path
     c = json.loads((tmp_path / "cases" / "c-1.json").read_text())
     opening = c["transcript"][1]["content"]
     assert "$ ls -lL /usr/sbin/cron" in opening and "-rw-r--r--" in opening     # the program's mode is in view
+    assert "E   L   F" in opening and "head -80" not in opening    # and that it is a binary, with no `file` on the patient
     assert [m["role"] for m in c["transcript"]] == ["system", "user", "assistant", "tool"]
     assert c["turn_log"][0]["tools"] == ["look", "diagnose", "hand"] and c["turn_log"][0]["reasoning"] == "check load first"
     assert c["mind"] == "fake-4b" and c["platform"] == "linux" and not c["closed"]

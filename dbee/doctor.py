@@ -297,6 +297,7 @@ class Doctor:
                 prog, text = self._unit_program(service)
                 if prog:
                     cmds.append(f"ls -lL {prog}")          # its mode: a program that cannot run is 203/EXEC
+                    cmds.append(f"head -c 4 {prog} | od -An -c")   # what it is (ELF, #!), with no `file` needed
                 if text:
                     cmds.append(f"head -80 {prog}")
             elif wake.kind == "health_miss":
@@ -385,8 +386,8 @@ class Doctor:
         if not m:
             return "", False
         path = m.group(1).rstrip(";")
-        _, kind = looks.look(self.patient, f"file -b {path}")
-        return path, "text" in kind.lower()
+        _, magic = looks.look(self.patient, f"head -c 4 {path} | od -An -c")
+        return path, magic.split()[:2] == ["#", "!"]
 
     def _opening(self, wake: Wake, first: str, precedents: list[dict], prior: "Case | None" = None) -> str:
         plat = self.patient.platform
