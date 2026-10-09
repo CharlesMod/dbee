@@ -109,14 +109,14 @@ def run(sc: dict, mind, *, runs_dir: Path, say=print, keep: bool = False, name: 
             patient.down()
         return result
     # wait for the wake
+    # a wake that landed while the seed was still running is already queued:
+    # take it whatever the clock says, then wait out the rest of notice_s
     wake: Wake | None = None
     deadline = seeded_at + sc.get("notice_s", 60)
-    while time.time() < deadline:
-        try:
-            wake = q.get(timeout=max(0.1, deadline - time.time()))
-            break
-        except Empty:
-            break
+    try:
+        wake = q.get(timeout=max(0.1, deadline - time.time()))
+    except Empty:
+        wake = None
     woke_s = (wake.at - seeded_at) if wake else None
     for w in watchers:
         w.end()
@@ -127,7 +127,14 @@ def run(sc: dict, mind, *, runs_dir: Path, say=print, keep: bool = False, name: 
         wk = sc.get("wake") or {}
         wake = Wake(wk.get("kind", "line"), wk.get("unit") or wk.get("url") or wk.get("pattern") or "?", evidence="(the watchers did not fire; seeded wake)")
     case = doctor.treat(wake)
-    chk = patient.run("sh /opt/dbee/scenario/check.sh")
+    # the judge's check waits for a patient still settling (a unit restarting,
+    # a job finishing its warm-up), bounded; red past that is red
+    end = time.time() + sc.get("settle_s", 30)
+    while True:
+        chk = patient.run("sh /opt/dbee/scenario/check.sh")
+        if chk.code == 0 or time.time() > end:
+            break
+        time.sleep(2)
     score = judge(sc, case, chk.code, chk.out, woke_s)
     result.update(case=case.id, score=score, record=str(home / "cases" / f"{case.id}.json"))
     say(f"   {'FIXED' if score['fixed'] else 'not fixed'}; diagnosed={score['diagnosed']} end={case.end} "

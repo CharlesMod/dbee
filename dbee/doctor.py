@@ -253,7 +253,7 @@ class Doctor:
         r = self.patient.run(cure.command, timeout=120)
         rec.update(ran=time.time(), code=r.code, out=looks.cut(r.out)[-2000:])
         woke_code, woke_out = self._reread(wake)              # settles first: a unit mid-restart is not yet an answer
-        vcode, vout = looks.look(self.patient, cure.verify, timeout=30)
+        vcode, vout = self._verify(cure.verify)
         rec.update(verify_code=vcode, verify_out=vout[-1500:])
         rec.update(woke_code=woke_code, woke_out=woke_out[-800:])
         if vcode == 0 and woke_code == 0:
@@ -271,6 +271,17 @@ class Doctor:
         return (f"cure ran [exit {r.code}]:\n{rec['out']}\n\nVERIFY `{cure.verify}` [exit {vcode}: RED]:\n{vout}\n\n"
                 f"RE-READ of what woke you [exit {woke_code}]:\n{woke_out}\n\n{undo_said} "
                 f"{'One more cure may run' if len(case.cures) < CURE_BUDGET else 'No more cures'}; or `hand` it over with what you know.")
+
+    def _verify(self, verify: str) -> tuple[int, str]:
+        """Each look of the verify in turn; the first red one is the answer."""
+        from .cures import split_and
+        outs = []
+        for part in split_and(verify):
+            code, out = looks.look(self.patient, part, timeout=30)
+            outs.append(f"$ {part}\n[exit {code}]\n{out}")
+            if code != 0:
+                return code, "\n".join(outs)
+        return 0, "\n".join(outs)
 
     def _reread(self, wake: Wake, settle_s: float = 20) -> tuple[int, str]:
         if wake.kind in ("unit_failed", "oom") and wake.what.endswith(".service"):

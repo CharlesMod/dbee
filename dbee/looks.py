@@ -31,26 +31,48 @@ FAMILIES: dict[str, tuple[str, ...]] = {
     "ulimit": (), "lscpu": (), "vmstat": (), "iostat": (), "top": ("-d",), "numfmt": (), "sort": (), "uniq": (), "cut": (), "awk": (), "sed": ("-i", "--in-place", "w", "e"),
     "test": (), "true": (), "echo": (), "printf": (), "stat": (), "md5sum": (), "sha256sum": (), "openssl": ("req", "genrsa", "genpkey", "rand"),
     "timedatectl": ("set-time", "set-timezone", "set-ntp", "set-local-rtc"), "hostnamectl": ("set-hostname", "set-icon-name", "set-chassis"),
-    "nslookup": (), "dig": (), "host": (), "resolvectl": ("flush-caches", "reset-statistics", "revert", "dns", "domain"),
+    "nslookup": (), "dig": (), "host": (), "netstat": (), "resolvectl": ("flush-caches", "reset-statistics", "revert", "dns", "domain"),
 }
 FILTERS = {"grep", "tail", "head", "wc", "sort", "uniq", "cut", "awk", "sed", "tr", "jq", "numfmt", "column"}
-SHELL_WRITE = re.compile(r"(>|>>|<\(|\$\(|`|;|&&|\|\||&\s*$)")
 SECRET = re.compile(r"(?i)(api[_-]?key|token|password|(?<![/\w])passwd(?!\b/)|secret|authkey|private[_-]?key|\.ssh/|id_(rsa|ed25519|ecdsa|dsa)\b|/etc/shadow|\.pem\b|\.key\b|tailscaled\.state|\.gnupg/|\.netrc|credentials)")
+
+
+OPS = {";", "&&", "||", "|", "&", ">", ">>", "<", "<<", "(", ")", ">&", "<&", "&>", "|&"}
+
+
+def segments(cmd: str) -> list[tuple[str, list[str]]]:
+    """Split a shell line into (operator-before, tokens) by the shell's own
+    quoting: a `;` or `|` inside quotes is part of a word, not an operator.
+    Raises ValueError on unbalanced quotes."""
+    lx = shlex.shlex(cmd, posix=True, punctuation_chars=";&|<>()")
+    lx.whitespace_split = True
+    out, cur, op = [], [], ""
+    for tok in lx:
+        if tok in OPS or (tok and set(tok) <= set(";&|<>()")):
+            out.append((op, cur))
+            cur, op = [], tok
+        else:
+            cur.append(tok)
+    out.append((op, cur))
+    return [(o, t) for o, t in out if t or o]
 
 
 def check(cmd: str) -> str:
     """Why this look may not run, or '' when it may."""
     if not cmd.strip():
         return "empty"
-    if SHELL_WRITE.search(cmd):
-        return "a look is one command and its filters: no redirection, substitution, `;`, `&&`, `||` or `&`"
-    parts = [p.strip() for p in cmd.split("|")]
-    if len(parts) > 4:
-        return "at most three filters after the command"
+    if "$(" in cmd or "`" in cmd:
+        return "no command substitution in a look"
     try:
-        head = shlex.split(parts[0])
+        segs = segments(cmd)
     except ValueError as e:
         return f"unparseable: {e}"
+    if any(op not in ("", "|") for op, _ in segs):
+        return "a look is one command and its filters: no redirection, `;`, `&&`, `||` or `&`"
+    if len(segs) > 4:
+        return "at most three filters after the command"
+    head = segs[0][1]
+    parts = [None] + [t for _, t in segs[1:]]
     if not head:
         return "empty"
     fam = head[0].rsplit("/", 1)[-1]
@@ -63,11 +85,7 @@ def check(cmd: str) -> str:
             return f"`{fam} {bad}` writes; a look only reads"
     if fam in ("awk", "sed") and any(t for t in head[1:] if "system(" in t or ">" in t):
         return "no shell-outs or writes inside awk/sed"
-    for f in parts[1:]:
-        try:
-            fh = shlex.split(f)
-        except ValueError as e:
-            return f"unparseable filter: {e}"
+    for fh in parts[1:]:
         if not fh or fh[0] not in FILTERS:
             return f"`{(fh or ['?'])[0]}` is not a filter a look may use (grep, tail, head, wc, sort, uniq, cut, awk, sed, tr, jq)"
         if fh[0] == "sed" and any(x in fh[1:] for x in ("-i", "--in-place")):

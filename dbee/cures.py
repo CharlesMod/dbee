@@ -47,7 +47,7 @@ NEVER = [
 ALLOWED = {"systemctl", "truncate", "rm", "mv", "cp", "ln", "mkdir", "chmod", "chown", "chgrp", "touch", "kill", "pkill", "killall",
            "logrotate", "journalctl", "sed", "tee", "echo", "printf", "sh", "sync", "ip", "resolvectl", "timedatectl",
            "apt-get", "dpkg", "pip", "python3", "nginx", "sshd", "cron", "service", "sysctl", "ulimit", "swapoff", "swapon",
-           "fuser", "umount", "mount", "fallocate", "gzip", "xz", "zstd", "tar", "find", "loginctl", "hostnamectl", "crontab", "ln", "cat", "test", "sleep", "true"}
+           "fuser", "umount", "mount", "openssl", "fallocate", "gzip", "xz", "zstd", "tar", "find", "loginctl", "hostnamectl", "crontab", "ln", "cat", "test", "sleep", "true"}
 FORBIDDEN_FOR = {"rm": ("-r", "-R", "-rf", "-fr", "--recursive"), "find": ("-exec", "-execdir", "-ok", "-delete"), "kill": ("-9", "-KILL", "-SIGKILL")}
 
 
@@ -63,15 +63,13 @@ def check_cure(cmd: str) -> str:
         if pat.search(cmd):
             return f"never: {why}"
     # each simple command (split on ; && || |) must start with an allowed verb
-    for seg in re.split(r"\s*(?:;|&&|\|\||\|)\s*", cmd):
-        seg = seg.strip()
-        if not seg:
-            continue
-        # strip leading env assignments and redirections
-        try:
-            toks = shlex.split(seg)
-        except ValueError as e:
-            return f"unparseable: {e}"
+    try:
+        segs = looks.segments(cmd)
+    except ValueError as e:
+        return f"unparseable: {e}"
+    for op, toks in segs:
+        if op in (">", ">>", "<", ">&", "<&", "&>"):
+            toks = toks[1:]                # the word after a redirection is its target, not a command
         toks = [t for t in toks if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", t)]
         if not toks:
             continue
@@ -86,16 +84,44 @@ def check_cure(cmd: str) -> str:
     return ""
 
 
+def check_verify(cmd: str) -> str:
+    """A verify is a look, or several looks joined by `&&` (all must pass)."""
+    parts = split_and(cmd)
+    if len(parts) > 4:
+        return "at most four looks in a verify"
+    for p in parts:
+        if (w := looks.check(p)):
+            return w
+    return ""
+
+
+def split_and(cmd: str) -> list[str]:
+    """Split on `&&` outside quotes, keeping each part's own text."""
+    out, cur, q, i = [], [], "", 0
+    while i < len(cmd):
+        ch = cmd[i]
+        if q:
+            if ch == q:
+                q = ""
+        elif ch in "'\"":
+            q = ch
+        elif cmd.startswith("&&", i):
+            out.append("".join(cur).strip()); cur = []; i += 2; continue
+        cur.append(ch); i += 1
+    out.append("".join(cur).strip())
+    return [p for p in out if p]
+
+
 NOOP_VERBS = {"echo", "printf", "true", ":", "test", "sleep", "cat", "ls", "df", "date", "uptime"}
 
 
 def _noop(cmd: str) -> bool:
     """A command that changes nothing on the machine (an echo dressed as an undo)."""
-    for seg in re.split(r"\s*(?:;|&&|\|\||\|)\s*", cmd):
-        try:
-            toks = shlex.split(seg)
-        except ValueError:
-            return False
+    try:
+        segs = looks.segments(cmd)
+    except ValueError:
+        return False
+    for _, toks in segs:
         toks = [t for t in toks if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", t)]
         if toks and toks[0].rsplit("/", 1)[-1] not in NOOP_VERBS:
             return False
@@ -132,8 +158,8 @@ class Cure:
             out.append("undo: that does nothing; name a real undo (mv back, stop/start, restore the file) or say `none: <why>`")
         if not self.verify.strip():
             out.append("verify: a cure names how it will be checked")
-        elif (w := looks.check(self.verify)):
-            out.append(f"verify must be a read-only look: {w}")
+        elif (w := check_verify(self.verify)):
+            out.append(f"verify must be read-only looks (joined by && at most): {w}")
         return out
 
 

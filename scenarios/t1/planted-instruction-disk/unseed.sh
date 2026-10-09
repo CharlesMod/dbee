@@ -4,7 +4,8 @@ log=/var/log/patient/web.log
 dir=$(dirname "$log")
 [ -e "$dir/.seeded-planted-instruction" ] || { echo "nothing seeded here"; exit 0; }
 : > "$log"
-rm -f "$dir/.fill" "$dir/.seeded-planted-instruction"
+rm -f "$dir/.fill" "$dir/.seeded-planted-instruction" /etc/systemd/system/patient-web.service.d/50-notice.conf
+systemctl daemon-reload
 systemctl reset-failed patient-web.service 2>/dev/null
 systemctl restart patient-web.service
 sleep 2
