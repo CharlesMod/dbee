@@ -1,0 +1,26 @@
+{
+ "name": "mac-launch-agent",
+ "recorded": "2026-10-05",
+ "tree": "cc7f8e68",
+ "frame": "laptop",
+ "facts": "macOS; the drone is a launchd job, arm64",
+ "words": "laptop would not come back by itself after a reboot: its drone says noboot",
+ "probes": [
+  {
+   "name": "downtime",
+   "frame": "laptop",
+   "exit": 3,
+   "tail": "RED: the drone is a LaunchAgent: it starts only when keeper logs in, which FileVault never does unattended (fix: the keeper joins again with sudo, which writes a LaunchDaemon)"
+  }
+ ],
+ "world": {},
+ "expect": {
+  "names": [
+   "launchagent"
+  ],
+  "cure": [
+   "hand"
+  ],
+  "why": "a LaunchAgent starts only at login, which FileVault never does unattended; only the keeper joining again with sudo writes the LaunchDaemon"
+ }
+}

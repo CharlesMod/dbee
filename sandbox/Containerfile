@@ -1,0 +1,27 @@
+# A patient: a plain Linux host with systemd, journald and the ordinary tools a
+# doctor reads with. Scenarios break it; the doctor is let in over `podman exec`.
+# Built once, run with `--systemd=always` so systemd is PID 1 and units fail
+# the way they do on a real machine.
+FROM docker.io/library/ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        systemd systemd-sysv dbus \
+        python3 curl iproute2 iputils-ping procps psmisc lsof util-linux \
+        openssh-server nginx cron logrotate \
+        ca-certificates less vim-tiny jq \
+    && rm -rf /var/lib/apt/lists/* \
+    && systemctl mask systemd-resolved systemd-networkd getty@tty1 console-getty \
+    && systemctl disable ssh nginx \
+    && mkdir -p /var/log/journal /var/log/patient /srv/patient
+
+# journald keeps the log on disk so a doctor can read what happened before it woke.
+RUN sed -i 's/^#\?Storage=.*/Storage=persistent/' /etc/systemd/journald.conf
+
+COPY patient/ /opt/patient/
+RUN chmod +x /opt/patient/*.sh \
+    && cp /opt/patient/patient-web.service /etc/systemd/system/ \
+    && systemctl enable patient-web.service
+
+STOPSIGNAL SIGRTMIN+3
+CMD ["/lib/systemd/systemd"]

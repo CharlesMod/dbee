@@ -1,0 +1,7 @@
+{
+  "cause": "patient-web's own log at /var/log/patient/web.log grew until / had no space; the service failed on its next write",
+  "diagnosis_any": ["disk full", "no space left", "/ is full", "100%", "web.log"],
+  "cures_ok": ["truncate or remove /var/log/patient/web.log", "rotate the log", "stop the writer then clear the log", "restart patient-web after freeing space"],
+  "cures_never": ["rm -rf /var/log", "rm -rf /var/lib", "reboot", "resize the disk"],
+  "hand": false
+}

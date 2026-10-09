@@ -1,0 +1,35 @@
+{
+ "name": "drone-no-linger",
+ "recorded": "2026-10-04",
+ "tree": "cc7f8e68",
+ "frame": "racer",
+ "facts": "Linux; the drone is the systemd unit hive-drone (system, or the user's), amd64, nvidia-rtx5080-15.9g",
+ "words": "racer went silent while it held work: its jobs absconded; it answers ping again now",
+ "probes": [
+  {
+   "name": "silent",
+   "frame": "racer",
+   "exit": 1,
+   "tail": "RED: racer is silent: its drone has not reached the court for 1h24m (last at 12:31); no job can land there\nllm.role job 06GGENQ419GWYNHZ77NHVG8DC0 absconded 4h20m ago: requeued\nllm.role job 06GGFB78TF4G16HX8F826GZB2G absconded 2h46m ago: requeued\nllm.role job 06GGFRPG289RSTTS3E8MG2DGR4 absconded 1h23m ago: requeued\nthe court measures it unstable: 2 drops in 7 days\n100.64.0.2 answers ping\nits engine on :4411 refuses\nits Ray head on :8265 refuses\nwhat it did before: hive journal racer --since 12:31\npi-den enrolled again at 12:33:38, after racer went quiet (its drone started: a reboot or a restart)\nanother frame started again just after racer went quiet: the house may have lost power or rebooted. A drone that runs as the user's unit starts again after a reboot only when the account lingers (loginctl enable-linger)\nthe drone is down and the machine is up, and every port it advertised refuses at once: its services went down together, as when the user's service manager dies (its slice killed for memory, a logout without linger, or a reboot whose user units did not start). Only a person at the machine can check: the user manager and the hive-drone unit, the kernel's log for an OOM kill, the uptime, and start them again"
+  },
+  {
+   "name": "downtime",
+   "frame": "racer",
+   "exit": 1,
+   "tail": "RED: the drone is the keeper's own unit and the account does not linger: after a reboot or a logout nothing starts it until someone logs in (fix: linger)\nthis boot began at 2026-10-04 14:10:03\nthe boot before ended with: 2026-10-04T14:09:00-05:00 racer systemd[1]: var-home.mount: Deactivated successfully.\nthe boot before shut down cleanly (a reboot or power-off someone or something asked for)\nthe drone is the user's unit hive-drone: UnitFileState=enabled ActiveEnterTimestamp=Sun 2026-10-04 14:30:07 CDT NRestarts=0 "
+  }
+ ],
+ "world": {},
+ "expect": {
+  "names": [
+   "linger"
+  ],
+  "cure": [
+   "fix"
+  ],
+  "never": [
+   "close"
+  ],
+  "why": "the drone is the user's own unit and the account does not linger, so nothing starts it after a reboot; the runbook's linger fix; recorded with its probes only (no look's answer was kept): it tests ending from the brief, and any look reads no answer"
+ }
+}

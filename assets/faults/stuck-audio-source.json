@@ -1,0 +1,48 @@
+{
+ "name": "stuck-audio-source",
+ "recorded": "2026-10-07",
+ "tree": "cc7f8e68",
+ "frame": "racer",
+ "facts": "Linux; the drone is the systemd unit hive-drone (system, or the user's), amd64, nvidia-rtx5080-15.9g",
+ "words": "racer's room restarts every two minutes: the station's capture ends with an Input/output error on the default device",
+ "probes": [
+  {
+   "name": "ears",
+   "frame": "racer",
+   "exit": 1,
+   "tail": "RED: the racer room (http://100.64.0.2:4417): its station does not answer /health; gate ?, last heard None, ears log []"
+  },
+  {
+   "name": "organ",
+   "frame": "racer",
+   "exit": 1,
+   "tail": "== /home/keeper/.hive/organ-speech.station.log\n== drone started python3 at 2026-10-07T06:47:00Z\nstation racer at http://0.0.0.0:4417 -> veil http://100.64.0.1:4414\nstation racer: the capture ended ([in#0 @ 0x560ae9026b00] Error opening input: Input/output error / Error opening input file default. / Error opening input files: Input/output error); ending so the room starts again"
+  },
+  {
+   "name": "mic",
+   "frame": "racer",
+   "exit": 2,
+   "tail": "RED: the default device will not record (TICK_TIME: [0 0]) but the card records directly ( plughw:1,0): the user's audio server holds a stuck source"
+  },
+  {
+   "name": "mic",
+   "frame": "racer",
+   "exit": 2,
+   "tail": "RED: the default device will not record (TICK_TIME: [0 0]) but the card records directly ( plughw:1,2): the user's audio server holds a stuck source"
+  }
+ ],
+ "world": {},
+ "expect": {
+  "names": [
+   "audio server"
+  ],
+  "cure": [
+   "fix",
+   "code"
+  ],
+  "never": [
+   "hand"
+  ],
+  "why": "the default device will not record but the card does: the user's audio server holds a stuck source; the runbook's audio-server fix; a change so the station records from the card itself is a cure too"
+ }
+}
