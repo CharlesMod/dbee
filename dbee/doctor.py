@@ -64,6 +64,10 @@ TOOLS = [
 ]
 
 
+SNAP_MAX = 64 << 20          # a file larger than this is not copied before a cure (say so: it is not kept)
+WIN_PATH = re.compile(r"'([A-Za-z]:\\[^']+)'|\"([A-Za-z]:\\[^\"]+)\"|([A-Za-z]:\\[^\s'\";|,)]+)")
+
+
 @dataclass
 class Case:
     id: str
@@ -366,7 +370,16 @@ class Doctor:
 
     def _targets(self, command: str) -> list[str]:
         """The files a cure would write: cp/mv/install destinations, redirection
-        targets, sed -i, truncate, chmod/chown/chgrp, rm and tee arguments."""
+        targets, sed -i, truncate, chmod/chown/chgrp, rm and tee arguments. In
+        PowerShell, every Windows path the cure names (a copy of a file it leaves
+        alone costs nothing; a missed one cannot be put back)."""
+        if self.patient.platform.shell == "powershell":
+            out = []
+            for m in WIN_PATH.finditer(command):
+                p = next(g for g in m.groups() if g)
+                if p not in out:
+                    out.append(p)
+            return out
         try:
             segs = looks.segments(command)
         except ValueError:
@@ -394,21 +407,40 @@ class Doctor:
 
     def _snapshot(self, case: "Case", n: int, paths: list[str]) -> list[str]:
         """Copy each file a cure is about to write, before it runs: whatever undo the
-        mind wrote, the machine can be put back (a delete is a move)."""
+        mind wrote, the machine can be put back (a delete is a move). The copies live
+        in the patient's own user state (a user install has no /var/lib), and only
+        portable tools are used (macOS has BSD stat)."""
         kept = []
+        win = self.patient.platform.shell == "powershell"
         for i, p in enumerate(paths):
-            dest = f"/var/lib/dbee/snap/{case.id}/{n}/{i}"
-            r = self.patient.run(f"[ -f {shlex.quote(p)} ] && [ $(stat -c %s {shlex.quote(p)}) -lt 67108864 ] "
-                                 f"&& mkdir -p {dest} && cp -a {shlex.quote(p)} {dest}/ && echo kept")
-            if "kept" in r.out:
+            sub = f"{case.id}/{n}/{i}"
+            if win:
+                q = p.replace("'", "''")
+                cmd = (f"$p = '{q}'; $d = Join-Path $env:LOCALAPPDATA 'DBee\\snap\\{sub.replace('/', chr(92))}'; "
+                       f"if ((Test-Path -LiteralPath $p -PathType Leaf) -and (Get-Item -LiteralPath $p).Length -lt {SNAP_MAX}) "
+                       f"{{ New-Item -ItemType Directory -Force -Path $d | Out-Null; Copy-Item -LiteralPath $p -Destination $d; \"kept $d\" }}")
+            else:
+                f = shlex.quote(p)
+                cmd = (f'd="$HOME/.local/state/dbee/snap/{sub}"; [ -f {f} ] && [ "$(wc -c < {f})" -lt {SNAP_MAX} ] '
+                       f'&& mkdir -p "$d" && cp -p {f} "$d/" && echo "kept $d"')
+            r = self.patient.run(cmd)
+            m = re.search(r"^kept (.+)$", r.out, re.M)
+            if m:
                 kept.append(p)
-                case.snapshots.append({"cure": n, "path": p, "copy": f"{dest}/{p.rsplit('/', 1)[-1]}"})
+                sep = "\\" if win else "/"
+                name = re.split(r"[\\/]", p)[-1]
+                case.snapshots.append({"cure": n, "path": p, "copy": m.group(1).strip() + sep + name})
         return kept
 
     def _restore(self, case: "Case", n: int) -> None:
+        win = self.patient.platform.shell == "powershell"
         for snap in case.snapshots:
             if snap["cure"] == n:
-                self.patient.run(f"cp -a {shlex.quote(snap['copy'])} {shlex.quote(snap['path'])}")
+                if win:
+                    c, p = snap["copy"].replace("'", "''"), snap["path"].replace("'", "''")
+                    self.patient.run(f"Copy-Item -LiteralPath '{c}' -Destination '{p}' -Force")
+                else:
+                    self.patient.run(f"cp -p {shlex.quote(snap['copy'])} {shlex.quote(snap['path'])}")
 
     def _unit_program(self, unit: str) -> tuple[str, bool]:
         """The program a unit runs, and whether it is a script a person could read

@@ -47,7 +47,7 @@ stands.
 **Looks and cures per platform**
 - [x] Read-only families for macOS (`log show`, `launchctl print`, `lsof`, `vm_stat`, `diskutil info`, `scutil --dns`, `security find-certificate`) and Windows (a PowerShell checker read by effect: read verbs and aliases, native tools with their write arguments, no call operator, no redirection but `2>$null`, no write methods, no secret stores) (2026-10-09, 61 tests)
 - [x] Each platform's NEVER list (Windows: `Format-Volume`, `Remove-Item -Recurse` of system trees, `bcdedit`, registry hive deletes; macOS: `diskutil erase*`, `csrutil`, `rm -rf /System`…)
-- [ ] Pre-cure backups on every platform (a delete is a move)
+- [x] Pre-cure backups on every platform (a delete is a move) (2026-10-09: in the patient's user state, portable tools only; PowerShell copies every Windows path a cure names)
 - [x] Re-read of what woke it per manager: systemd (oneshot by result), launchd (running, or a clean last exit), Windows SCM (Win32_Service state and exit code) (2026-10-09)
 
 **Minds**
