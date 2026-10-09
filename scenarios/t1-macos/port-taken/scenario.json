@@ -1,0 +1,14 @@
+{
+  "name": "mac-port-taken",
+  "tier": 1,
+  "patient": "macos-user",
+  "wake": {
+    "kind": "unit_failed",
+    "unit": "com.example.patientweb"
+  },
+  "words": "the site won't come back up",
+  "notice_s": 60,
+  "treat_s": 600,
+  "needs": [],
+  "recur_s": 15
+}

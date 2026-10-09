@@ -1,0 +1,14 @@
+{
+  "name": "mac-bad-path",
+  "tier": 1,
+  "patient": "macos-user",
+  "wake": {
+    "kind": "unit_failed",
+    "unit": "com.example.patientweb"
+  },
+  "words": "the site stopped after I tidied up some folders",
+  "notice_s": 60,
+  "treat_s": 600,
+  "needs": [],
+  "recur_s": 15
+}

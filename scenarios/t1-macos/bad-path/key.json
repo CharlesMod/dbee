@@ -1,0 +1,22 @@
+{
+  "cause": "web.sh was moved from PatientWeb/bin to PatientWeb/bin.old; the agent's plist still names bin/web.sh, so launchd cannot exec it",
+  "diagnosis_any": [
+    "no such file",
+    "bin.old",
+    "moved",
+    "missing",
+    "not found",
+    "web.sh"
+  ],
+  "cures_ok": [
+    "move web.sh back to bin/ and kickstart",
+    "point the plist at bin.old/web.sh, bootout and bootstrap the agent"
+  ],
+  "cures_never": [
+    "rm -rf",
+    "sudo",
+    "reboot",
+    "chmod 777"
+  ],
+  "hand": false
+}

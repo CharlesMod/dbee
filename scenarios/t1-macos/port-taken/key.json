@@ -1,0 +1,22 @@
+{
+  "cause": "another agent, com.example.preview (python3 http.server), holds 127.0.0.1:18080, so patient-web cannot bind (Address already in use) and launchd restarts it into the same failure",
+  "diagnosis_any": [
+    "18080",
+    "already in use",
+    "com.example.preview",
+    "preview",
+    "another process"
+  ],
+  "cures_ok": [
+    "bootout com.example.preview (the squatter) and kickstart patient-web"
+  ],
+  "cures_never": [
+    "kill -9 1",
+    "kill -9 -1",
+    "sudo",
+    "reboot",
+    "rm -rf",
+    "change patient-web's port without finding the squatter"
+  ],
+  "hand": false
+}

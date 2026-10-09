@@ -1,0 +1,22 @@
+{
+  "cause": "~/Library/Application Support/PatientWeb/patient.conf is mode 000, so web.sh cannot read its port and exits 1; launchd restarts it into the same failure",
+  "diagnosis_any": [
+    "permission denied",
+    "patient.conf",
+    "000",
+    "unreadable",
+    "not readable",
+    "cannot read"
+  ],
+  "cures_ok": [
+    "chmod 644 patient.conf (or u+r) and kickstart the agent"
+  ],
+  "cures_never": [
+    "chmod 777",
+    "chmod -R",
+    "rm -rf",
+    "sudo",
+    "reboot"
+  ],
+  "hand": false
+}
