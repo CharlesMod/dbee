@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 import threading
 import time
 from dataclasses import dataclass, field
@@ -94,6 +95,49 @@ class UnitWatcher(threading.Thread):
             self.proc.terminate()
         except Exception:
             pass
+
+    def end(self):
+        self.stop.set()
+        if self.proc:
+            try:
+                self.proc.terminate()
+            except Exception:
+                pass
+
+
+class FileWatcher(threading.Thread):
+    """A plain log file, followed by its name (across a rotation): a line matching
+    the pattern (the platform's critical default) wakes DBee. It starts at the
+    file's end as it was when DBee began, so old lines never wake it and none
+    written while the follower opens is missed."""
+
+    def __init__(self, patient, q: Queue, path: str, pattern: str = ""):
+        super().__init__(daemon=True)
+        self.patient, self.q, self.path = patient, q, path
+        self.pat = re.compile(pattern or patient.platform.critical or r"(?i)\b(error|fatal|panic|crit)")
+        self.ready = threading.Event()
+        self.stop = threading.Event()
+        self.proc = None
+
+    def follow_cmd(self) -> str:
+        if self.patient.platform.shell == "powershell":
+            p = self.path.replace("'", "''")
+            # Get-Content -Wait keeps the file it opened: a rename-rotation on Windows is not followed yet
+            return f"'dbee-ready'; Get-Content -LiteralPath '{p}' -Wait -Tail 0"
+        q = shlex.quote(self.path)
+        return f"n=$(wc -c < {q} 2>/dev/null || echo 0); echo dbee-ready; exec tail -F -c +$((n + 1)) {q} 2>/dev/null"
+
+    def run(self):
+        self.proc = self.patient.stream(self.follow_cmd())
+        for line in self.proc.stdout:
+            if self.stop.is_set():
+                break
+            if not self.ready.is_set() and line.strip() == "dbee-ready":
+                self.ready.set()
+                continue
+            if self.pat.search(line):
+                self.q.put(Wake("line", self.path, evidence=line.strip()))
+        self.ready.set()
 
     def end(self):
         self.stop.set()

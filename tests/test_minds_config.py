@@ -86,10 +86,16 @@ def test_an_empty_config_watches_the_whole_machine(tmp_path):
     assert c.watches == [] and c.mind == ""
 
 
+def test_a_watch_can_name_a_log_file(tmp_path):
+    p = tmp_path / "dbee.toml"
+    p.write_text('[[watch]]\nfile = "/var/log/app.log"\npattern = "FATAL"\n')
+    assert [(w.file, w.pattern) for w in config.load(p).watches] == [("/var/log/app.log", "FATAL")]
+
+
 def test_a_watch_naming_nothing_is_refused(tmp_path):
     p = tmp_path / "dbee.toml"
     p.write_text('[[watch]]\npattern = "x"\n')
-    with pytest.raises(ValueError, match="neither a service nor a health"):
+    with pytest.raises(ValueError, match="neither a service, a health URL nor a file"):
         config.load(p)
 
 

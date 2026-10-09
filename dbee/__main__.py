@@ -47,7 +47,7 @@ def main(argv=None) -> int:
     ap.add_argument("--seat", default=os.environ.get("DBEE_SEAT", "background"), help="the router's call class: background, batch, tool, conversation")
     ap.add_argument("--wait", type=float, default=float(os.environ.get("DBEE_WAIT", "120")), help="seconds to wait for a seat before a call fails")
     sub = ap.add_subparsers(dest="verb", required=True)
-    w = sub.add_parser("watch"); w.add_argument("service", nargs="?", default="", help="a systemd unit, a launchd label or a Windows service; empty watches the whole machine"); w.add_argument("--patient", default="local", help="local, ssh:HOST, ssh-win:HOST (PowerShell), podman:NAME"); w.add_argument("--health", default="", help="a URL that should answer"); w.add_argument("--pattern", default="", help="what a critical line looks like (a regex); the platform's default otherwise"); w.add_argument("--config", default=os.environ.get("DBEE_CONFIG", ""), help="a dbee.toml: the mind, the services to watch, the doctor's home")
+    w = sub.add_parser("watch"); w.add_argument("service", nargs="?", default="", help="a systemd unit, a launchd label or a Windows service; empty watches the whole machine"); w.add_argument("--patient", default="local", help="local, ssh:HOST, ssh-win:HOST (PowerShell), podman:NAME"); w.add_argument("--health", default="", help="a URL that should answer"); w.add_argument("--file", default="", help="a plain log file to follow by name"); w.add_argument("--pattern", default="", help="what a critical line looks like (a regex); the platform's default otherwise"); w.add_argument("--config", default=os.environ.get("DBEE_CONFIG", ""), help="a dbee.toml: the mind, the services to watch, the doctor's home")
     pl = sub.add_parser("platform"); pl.add_argument("--patient", default="local")
     t = sub.add_parser("treat"); t.add_argument("--patient", default="local"); t.add_argument("--wake", required=True, help="kind:what, e.g. unit_failed:nginx.service"); t.add_argument("--evidence", default="")
     s = sub.add_parser("sim"); s.add_argument("pick", nargs="?", default="all"); s.add_argument("--keep", action="store_true"); s.add_argument("--repeat", type=int, default=1, help="run each scenario N times (a pass rate, not one coin flip)"); s.add_argument("--jobs", type=int, default=int(os.environ.get("DBEE_JOBS", "0")), help="scenarios at once, each its own patient; 0 (the default) runs every picked scenario at once, and calls past the mind's free seats wait at the router"); s.add_argument("--runs", default=str(ROOT / "runs"))
@@ -123,13 +123,16 @@ def main(argv=None) -> int:
 
     # watch: sleep until something wakes
     from .notify import notify
-    from .watch import EventWatcher, Fold, HealthWatcher, Wake
+    from .watch import EventWatcher, FileWatcher, Fold, HealthWatcher, Wake
     q: Queue = Queue()
-    plan = [(a.service, a.pattern, a.health)] if (a.service or a.health or not cfg or not cfg.watches) \
-        else [(w.service, w.pattern, w.health) for w in cfg.watches]
+    plan = [(a.service, a.pattern, a.health, a.file)] if (a.service or a.health or a.file or not cfg or not cfg.watches) \
+        else [(w.service, w.pattern, w.health, w.file) for w in cfg.watches]
     ws, named = [], []
-    for svc, pattern, health in plan:
-        if svc or not health:
+    for svc, pattern, health, path in plan:
+        if path:
+            ws.append(FileWatcher(p, q, path, pattern))
+            named.append(path)
+        if svc or not (health or path):
             service = p.platform.resolve(p, svc)["service"] if svc else ""
             ws.append(EventWatcher(p, q, service, pattern))
             named.append(service or "the whole machine")

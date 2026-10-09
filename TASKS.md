@@ -36,7 +36,7 @@ stands.
 - [x] journald follow: unit failed, OOM kill, a line matching a pattern (2026-10-09)
 - [x] macOS: `log stream --style ndjson` (errors, faults, launchd's abnormal exits); pinned by recorded lines (2026-10-09) — a live stream on the Mac is next (a Hive frame cannot be streamed through jobs)
 - [x] Windows: an `EventLogWatcher` subscription (event-driven, no poll): SCM 7031/7034/7023/7024/7000/7009 and critical/error events naming the service; pinned by recorded events (2026-10-09) — a live stream is next
-- [ ] Plain log file tail for anything else (follow by name across rotation)
+- [x] Plain log file tail for anything else (follow by name across rotation) (2026-10-09: `[[watch]] file`, `dbee watch --file`; from the end as DBee began, nothing missed while the follower opens; Windows follows appends but not yet a rename-rotation)
 - [x] Debounce and fold: one case per fault, a storm of lines is one wake (2026-10-09: a wake raised before its subject's last case ended is that case's; one after is a recurrence; keyed on the case's end, not a five-minute window)
 
 **Point it at a service** (`dbee watch SERVICE` resolves the service per platform and watches its stream with the platform's critical-line default, `--pattern` to override: built 2026-10-09, live run on macOS and Windows next)

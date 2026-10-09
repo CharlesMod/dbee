@@ -17,6 +17,10 @@ whole machine with the mind named by --mind).
     [[watch]]
     health = "http://127.0.0.1:8080/"   # optional: a URL that must answer
 
+    [[watch]]
+    file = "/var/log/myapp.log"   # a plain log file, followed by name across rotation
+    pattern = "ERROR|FATAL"       # optional, as above
+
     [notify]                      # a case handed to a person reaches them (dbee/notify.py)
     url = "https://ntfy.sh/my-dbee-topic"
     command = ["/usr/local/bin/tell-me"]   # the report on stdin
@@ -38,6 +42,7 @@ class Watch:
     service: str = ""
     pattern: str = ""
     health: str = ""
+    file: str = ""
 
 
 @dataclass
@@ -64,10 +69,10 @@ def load(path: str | os.PathLike) -> Config:
         raise ValueError(f"{p}: [mind] effort is a table like {{ triage = \"low\" }}")
     watches = []
     for i, w in enumerate(d.get("watch") or []):
-        if not isinstance(w, dict) or not (w.get("service") or w.get("health")):
-            raise ValueError(f"{p}: [[watch]] #{i + 1} names neither a service nor a health URL")
+        if not isinstance(w, dict) or not (w.get("service") or w.get("health") or w.get("file")):
+            raise ValueError(f"{p}: [[watch]] #{i + 1} names neither a service, a health URL nor a file")
         watches.append(Watch(service=str(w.get("service", "")), pattern=str(w.get("pattern", "")),
-                             health=str(w.get("health", ""))))
+                             health=str(w.get("health", "")), file=str(w.get("file", ""))))
     doc = d.get("doctor") or {}
     n = d.get("notify") or {}
     cmd = n.get("command") or []
