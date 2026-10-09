@@ -21,6 +21,14 @@ the window's script calls).
 - **macOS, the local 4B on Metal.** Installed through the wizard (Python, the
   engine, the model fetched and verified, two LaunchAgents), woke on the test
   agent's mode-000 config, diagnosed it, `chmod 644`, closed in 4 min.
+- **Windows, 26B through the Hive.** The machine page found the Hive here and
+  its court; the mind page offered the Hive's 26B; installed as the user's
+  scheduled task with a private Python. A test service whose program is
+  `cmd /c exit 1` was started: DBee woke on SCM 7009 within 2 s, read the
+  service's `PathName`, diagnosed it, and handed it to a person in 3 turns (the
+  honest end: nothing on the machine says what the service should run). The
+  first attempt's readings were lost to the harness, not DBee: PowerShell's
+  `$r` and `$R` are one variable.
 - **The pages.** The machine page showed the host's 31 GB and 20 cores inside
   the 6 GB, 4-CPU container (Wasp now reads the cgroup's `memory.max` and
   `cpu.max`); it said "No Hive found" while the mind page offered the Hive's
