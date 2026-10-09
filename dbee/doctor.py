@@ -15,6 +15,7 @@ so; a third time ends triage (the mind's thinking is going round).
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 from dataclasses import dataclass, field, asdict
@@ -88,8 +89,10 @@ class Case:
 
 
 class Doctor:
-    def __init__(self, patient, mind, *, home: Path, runbook: Runbook | None = None, say=print):
+    def __init__(self, patient, mind, *, home: Path, runbook: Runbook | None = None, say=print, max_tokens: int = 0):
         self.patient, self.mind, self.home, self.say = patient, mind, home, say
+        # a reply's budget; a mind that thinks before it answers needs room for both
+        self.max_tokens = max_tokens or int(os.environ.get("DBEE_MAX_TOKENS", "700"))
         self.runbook = runbook or Runbook()
         self.casebook = Casebook(home / "casebook.jsonl")
 
@@ -182,7 +185,7 @@ class Doctor:
     # ------------------------------------------------------------- the pieces
     def _ask(self, case: Case, msgs, phase):
         tools = TOOLS if phase == "treat" else [t for t in TOOLS if t["function"]["name"] in ("look", "diagnose", "hand")]
-        r = self.mind.chat(msgs, tools=tools, max_tokens=700)
+        r = self.mind.chat(msgs, tools=tools, max_tokens=self.max_tokens)
         case.turns += 1
         case.tokens_in += r.tokens_in
         case.tokens_out += r.tokens_out
