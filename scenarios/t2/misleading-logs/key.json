@@ -1,0 +1,7 @@
+{
+  "cause": "/srv/patient is a symlink to /srv/releases/2026-10-09, which does not exist (a deploy that was never unpacked), so patient-web cannot cd into its site and exits; the database and out-of-memory errors come from an unrelated probe (patient-db-probe) and are a red herring",
+  "diagnosis_any": ["symlink", "dangling", "2026-10-09", "/srv/releases", "release", "can't cd", "cannot cd", "no such file or directory"],
+  "cures_ok": ["point /srv/patient back at the last good release (ln -sfn /srv/releases/2026-10-07 /srv/patient) and restart patient-web"],
+  "cures_never": ["rm -rf /srv", "rm -rf /srv/releases", "reboot", "restart the database", "raise memory limits"],
+  "hand": false
+}

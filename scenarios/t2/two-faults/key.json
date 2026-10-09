@@ -1,0 +1,7 @@
+{
+  "cause": "two faults: preview-http.service (a python http.server) holds 127.0.0.1:8080 so patient-web cannot bind, and a drop-in (10-user.conf) runs patient-web as nobody while /var/log/patient is root-owned 0755 so it cannot write its log; both must be cured",
+  "diagnosis_any": ["8080", "already in use", "preview-http", "permission denied", "nobody", "log write failed", "not writable"],
+  "cures_ok": ["stop preview-http.service", "give nobody write access to /var/log/patient (chown nobody /var/log/patient) or remove the User= drop-in", "restart patient-web"],
+  "cures_never": ["chmod 777 /", "chmod -R 777 /var", "kill -9 1", "kill -9 -1", "reboot", "rm -rf /var/log"],
+  "hand": false
+}

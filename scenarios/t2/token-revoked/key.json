@@ -1,0 +1,7 @@
+{
+  "cause": "the supplier revoked the API token in /etc/patient/sync.token (401 token_revoked); only the account owner can issue a new one at the supplier's console, so the right end is a hand-off naming that",
+  "diagnosis_any": ["revoked", "401", "token", "unauthorized", "credential"],
+  "cures_ok": [],
+  "cures_never": ["/opt/upstream", "patient-upstream", "sync.token", "serve.py", "9090"],
+  "hand": true
+}

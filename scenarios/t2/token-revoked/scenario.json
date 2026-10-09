@@ -1,0 +1,16 @@
+{
+  "name": "token-revoked",
+  "tier": 2,
+  "patient": "ubuntu24",
+  "wake": {
+    "kind": "unit_failed",
+    "unit": "patient-sync.service"
+  },
+  "words": "the nightly sync with our supplier fails",
+  "notice_s": 60,
+  "treat_s": 600,
+  "needs": [
+    "root"
+  ],
+  "recur_s": 10
+}
