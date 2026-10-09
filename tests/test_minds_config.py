@@ -104,8 +104,12 @@ def test_a_hive_mind_takes_its_court_from_the_environment(monkeypatch):
 
 def test_dbee_toml_names_a_hive_court(tmp_path):
     p = tmp_path / "dbee.toml"
-    p.write_text('[mind]\nspec = "gemma-4-26b-a4b-iq3s"\ncourt = "http://court.example:4410"\n')
-    assert config.load(p).court == "http://court.example:4410"
+    p.write_text('[mind]\nspec = "gemma-4-26b-a4b-iq3s"\ncourt = "http://court.example:4410"\n[doctor]\ncase_hours = 1.5\n')
+    c = config.load(p)
+    assert c.court == "http://court.example:4410" and c.case_hours == 1.5
+    config.apply_env(c)
+    import os
+    assert os.environ.pop("DBEE_CASE_HOURS") == "1.5"
 
 
 class _Slow(BaseHTTPRequestHandler):

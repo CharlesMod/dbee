@@ -30,7 +30,8 @@ from .watch import Wake
 LOOK_BUDGET = 14
 WRITES = re.compile(r"writes|redirection")
 CURE_BUDGET = 2
-UNGROUNDED_LIMIT = 3          # ungrounded diagnoses refused before the case is handed to a person
+CASE_HOURS = 3.0              # a case works until this wall-clock bound, then is handed to a person
+LOOKS_BACK = 4                # looks given back with each refused diagnosis, to find its line
 
 SYSTEM = """You are DBee, a doctor for machines. A fault woke you on the patient below. Work as a careful engineer:
 read until you can name the MECHANISM (what is failing and why, not just the symptom), then apply ONE cure you can undo, then confirm it took.
@@ -79,6 +80,7 @@ class Case:
     close_said: dict | None = None
     decide_now: bool = False
     ungrounded: int = 0                                  # diagnoses refused for evidence never read
+    look_limit: int = LOOK_BUDGET                        # looks before the mind is asked to decide
     snapshots: list = field(default_factory=list)        # files backed up before a cure wrote them
     transcript: list = field(default_factory=list)                             # going round: the next turn may only decide                       # {cause, cause_removed, finding} as the mind said it
     reopened_from: str = ""                              # the case this one reopens
@@ -110,6 +112,8 @@ class Doctor:
         # reasoning effort per phase, for minds that think (DBEE_EFFORT="triage=low,treat=medium");
         # empty leaves the engine's own default
         self.effort = dict(kv.split("=", 1) for kv in os.environ.get("DBEE_EFFORT", "").split(",") if "=" in kv)
+        # the one bound on a case: its wall clock (DBEE_CASE_HOURS, dbee.toml [doctor] case_hours)
+        self.case_s = float(os.environ.get("DBEE_CASE_HOURS", "") or CASE_HOURS) * 3600
         self.runbook = runbook or Runbook()
         self.casebook = Casebook(home / "casebook.jsonl")
 
@@ -136,16 +140,17 @@ class Doctor:
         try:
             while True:
                 case.save(self.home / "cases")
-                if case.turns >= LOOK_BUDGET + CURE_BUDGET + 6:
-                    case.end, case.finding = "budget", "the turn budget ended the case"
+                if time.time() - case.opened >= self.case_s:
+                    case.hand = {"step": f"a person takes over: the case ran {self.case_s / 3600:g} h without an end",
+                                 "finding": (case.diagnosis or {}).get("cause") or
+                                            f"no diagnosis grounded in what was read ({case.ungrounded} refused)"}
+                    case.end, case.finding = "handed", case.hand["finding"]
+                    self.say(f"[{case.id}] handed: {case.hand['step']}")
                     break
                 reply = self._ask(case, msgs, phase)
                 msgs.append(self._assistant(reply))
                 if not reply.tool_calls:
-                    # words with no call: nudge once, then end
-                    if msgs[-2].get("role") == "user" and "call a tool" in str(msgs[-2].get("content", "")):
-                        case.end, case.finding = "stalled", reply.text.strip()[:400] or "answered in words, no act"
-                        break
+                    # words with no call: an act is asked for, every time
                     msgs.append({"role": "user", "content": "Words change nothing here: call a tool (`look`, `diagnose`, `cure`, `hand` or `close`)."})
                     continue
                 for tc in reply.tool_calls:
@@ -154,9 +159,6 @@ class Doctor:
                     if name == "look":
                         out = self._do_look(case, a.get("cmd", ""), seen)
                         if out is None:
-                            if case.decide_now:
-                                case.end, case.finding = "stalled", "went round again after being asked to decide"
-                                break
                             case.decide_now = True
                             out = ("refused: you have asked this a third time; its answer will not change. "
                                    "Decide now from what you have read: " +
@@ -173,13 +175,8 @@ class Doctor:
                             case.ungrounded += 1
                             case.refusals.append({"kind": "diagnose", "what": a.get("evidence", "")[:300],
                                                   "why": "evidence not in anything read"})
-                            if case.ungrounded >= UNGROUNDED_LIMIT:
-                                case.hand = {"step": "a person reads the case: no diagnosis could be grounded in what was read",
-                                             "finding": f"the mind's diagnosis ({a.get('cause', '')[:200]}) rested on evidence "
-                                                        f"found in nothing it read, {case.ungrounded} times"}
-                                case.end, case.finding = "handed", case.hand["finding"]
-                                self.say(f"[{case.id}] handed: {case.hand['step']}")
-                                break
+                            # looks back, to find the line the mechanism shows
+                            case.look_limit = max(case.look_limit, len(case.looks) + LOOKS_BACK)
                             msgs.append({"role": "tool", "tool_call_id": tc.get("id", ""), "name": name,
                                          "content": "refused: the evidence is not in anything you have read. "
                                                     "Quote a line exactly as a look printed it, or look for the line that shows the mechanism."})
@@ -232,7 +229,7 @@ class Doctor:
 
     # ------------------------------------------------------------- the pieces
     def _ask(self, case: Case, msgs, phase):
-        if phase == "triage" and (len(case.looks) >= LOOK_BUDGET or case.decide_now):
+        if phase == "triage" and (len(case.looks) >= case.look_limit or case.decide_now):
             tools = [t for t in TOOLS if t["function"]["name"] in ("diagnose", "hand")]
         elif phase == "treat" and case.decide_now:
             tools = [t for t in TOOLS if t["function"]["name"] in ("cure", "close", "hand")]
@@ -435,7 +432,7 @@ class Doctor:
                 out += ("\n[a look only reads. To change the machine, name the mechanism with `diagnose`; "
                         "then a `cure` carries the change, its undo and its verify.]")
         note = "\n[you have run this exact look before; its answer has not changed. Read it, or look elsewhere.]" if n == 2 else ""
-        left = LOOK_BUDGET - len(case.looks)
+        left = case.look_limit - len(case.looks)
         budget = (f"\n[looks left: {left}]" if left > 0 else
                   "\n[looks spent: decide now. `diagnose` with what you have read, or `hand` it over.]")
         return f"[exit {code}]\n{out}{note}{budget}"
@@ -451,8 +448,8 @@ class Doctor:
             case.refusals.append({"kind": "cure", "what": cure.command, "why": "; ".join(problems)})
             same = sum(1 for r in case.refusals if r["kind"] == "cure" and r["what"] == cure.command)
             if same >= 3:
-                case.end, case.finding = "stalled", f"the same cure refused three times: {problems[0]}"
-                return "refused three times; the case ends here."
+                return ("refused again, the same cure for the same reason: " + "; ".join(problems) +
+                        "\nIt will be refused every time. Propose a different cure inside the shape, or `hand` the case over.")
             self.say(f"[{case.id}] cure refused: {problems[0]}")
             return "refused: " + "; ".join(problems) + "\nPropose a cure inside the shape, or `hand` the case over."
         rec = {"cure": {**asdict(cure), "irreversible": cure.irreversible}, "undo_recorded": time.time()}

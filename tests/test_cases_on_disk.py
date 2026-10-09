@@ -63,32 +63,41 @@ def test_a_case_cut_short_is_on_disk_with_what_the_mind_saw_and_exports(tmp_path
     assert export_cases(tmp_path, io.StringIO(), won_only=True) == 0
 
 
-class _Diagnoser:
-    """Diagnoses every turn, quoting `quotes` in turn (the last repeats)."""
+class _Script:
+    """A mind that plays a script: each step is a tool call (name, arguments); the
+    last step repeats. It keeps the kit each turn was offered."""
     name = "fake"
 
-    def __init__(self, *quotes):
-        self.quotes, self.n = list(quotes), 0
+    def __init__(self, *steps, pause=0.0):
+        self.steps, self.n, self.kits, self.pause = list(steps), 0, [], pause
 
     def chat(self, msgs, tools=None, max_tokens=0, effort=""):
-        q = self.quotes[min(self.n, len(self.quotes) - 1)]
+        import time
+        time.sleep(self.pause)
+        self.kits.append([t["function"]["name"] for t in tools or []])
+        name, args = self.steps[min(self.n, len(self.steps) - 1)]
         self.n += 1
-        names = [t["function"]["name"] for t in tools or []]
-        if "diagnose" not in names:      # past the diagnosis: hand it over, the test is done
-            return Reply(text="", tool_calls=[{"id": f"h{self.n}", "name": "hand", "arguments": {"step": "x", "finding": "x"}}])
-        return Reply(text="", tool_calls=[{"id": f"d{self.n}", "name": "diagnose",
-                                           "arguments": {"cause": "EXTRA_OPTS is unset", "evidence": q}}])
+        return Reply(text="", tool_calls=[{"id": f"t{self.n}", "name": name, "arguments": args}])
 
 
-def test_no_ungrounded_diagnosis_is_ever_recorded(tmp_path):
-    doc = Doctor(_Patient(), _Diagnoser("cron: EXTRA_OPTS evaluates to an empty string"), home=tmp_path)
+UNREAD = ("diagnose", {"cause": "EXTRA_OPTS is unset", "evidence": "cron: EXTRA_OPTS evaluates to an empty string"})
+READ = ("diagnose", {"cause": "cron lost its execute bit", "evidence": "-rw-r--r-- 1 root root 60080 Mar 31  2024 /usr/sbin/cron"})
+HAND = ("hand", {"step": "x", "finding": "x"})
+
+
+def test_no_ungrounded_diagnosis_is_recorded_and_the_case_works_until_its_clock(tmp_path, monkeypatch):
+    monkeypatch.setenv("DBEE_CASE_HOURS", str(1.5 / 3600))           # a 1.5 s case
+    doc = Doctor(_Patient(), _Script(UNREAD, pause=0.05), home=tmp_path)
     case = doc.treat(Wake("unit_failed", "cron.service", evidence="status=203/EXEC"), case_id="c-2")
-    assert case.diagnosis is None and case.end == "handed" and case.ungrounded == 3
-    assert "no diagnosis could be grounded" in case.hand["step"]
+    assert case.diagnosis is None and case.end == "handed" and case.ungrounded > 3   # refused every time, never let through
+    assert "ran" in case.hand["step"] and "no diagnosis grounded" in case.finding
 
 
-def test_a_diagnosis_grounded_on_a_later_try_is_recorded(tmp_path):
-    doc = Doctor(_Patient(), _Diagnoser("cron: EXTRA_OPTS evaluates to an empty string",
-                                        "-rw-r--r-- 1 root root 60080 Mar 31  2024 /usr/sbin/cron"), home=tmp_path)
-    case = doc.treat(Wake("unit_failed", "cron.service", evidence="status=203/EXEC"), case_id="c-3")
+def test_a_refused_diagnosis_gives_the_looks_back_and_a_grounded_one_is_recorded(tmp_path):
+    from dbee.doctor import LOOK_BUDGET
+    looks = [("look", {"cmd": f"uptime{' ' * i}"}) for i in range(LOOK_BUDGET)]
+    mind = _Script(*looks, UNREAD, READ, HAND)
+    case = Doctor(_Patient(), mind, home=tmp_path).treat(Wake("unit_failed", "cron.service"), case_id="c-3")
+    assert mind.kits[LOOK_BUDGET] == ["diagnose", "hand"]                  # looks spent: decide
+    assert "look" in mind.kits[LOOK_BUDGET + 1]                            # refused: looks given back
     assert case.diagnosis and case.diagnosis["evidence"].startswith("-rw-r--r--") and case.ungrounded == 1

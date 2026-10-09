@@ -19,6 +19,7 @@ whole machine with the mind named by --mind).
 
     [doctor]
     home = "~/.dbee"              # cases, casebook, transcripts
+    case_hours = 3                # a case works until this wall-clock bound, then is handed to a person
 """
 from __future__ import annotations
 
@@ -43,6 +44,7 @@ class Config:
     effort: dict = field(default_factory=dict)
     watches: list[Watch] = field(default_factory=list)
     home: Path = Path.home() / ".dbee"
+    case_hours: float = 0.0
     path: Path | None = None
 
 
@@ -62,12 +64,15 @@ def load(path: str | os.PathLike) -> Config:
     doc = d.get("doctor") or {}
     return Config(mind=str(m.get("spec", "")), court=str(m.get("court", "")), max_tokens=int(m.get("max_tokens", 0) or 0),
                   effort={str(k): str(v) for k, v in eff.items()}, watches=watches,
-                  home=Path(str(doc.get("home", "~/.dbee"))).expanduser(), path=p)
+                  home=Path(str(doc.get("home", "~/.dbee"))).expanduser(),
+                  case_hours=float(doc.get("case_hours", 0) or 0), path=p)
 
 
 def apply_env(cfg: Config) -> None:
     """The doctor reads its budgets from the environment; a config sets them once."""
     if cfg.max_tokens:
         os.environ["DBEE_MAX_TOKENS"] = str(cfg.max_tokens)
+    if cfg.case_hours:
+        os.environ["DBEE_CASE_HOURS"] = str(cfg.case_hours)
     if cfg.effort:
         os.environ["DBEE_EFFORT"] = ",".join(f"{k}={v}" for k, v in cfg.effort.items())

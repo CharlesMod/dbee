@@ -39,7 +39,12 @@ found five faults in the harness and none that a sim would have shown:
   line puts `$EXTRA_OPTS` beside `status=203/EXEC`. Its diagnosis quoted
   evidence it had never read, was refused twice, and was recorded on the third
   try, because grounding allowed two refusals. Now no ungrounded diagnosis is
-  ever recorded: after three, the case is handed to a person.
+  ever recorded, however many come; each refusal gives a few looks back to
+  find the line. A case has one bound, its wall clock (3 h by default, `[doctor]
+  case_hours`), after which it is handed to a person; the counted endings (a
+  turn budget, "stalled" after words or a repeated look or cure) are refusals
+  that keep it working. The cure budget (two cures) stays: it bounds change to
+  the machine, not time.
 
 Cases are now written after every turn and export as training data (`dbee
 export`); the Linux case above was lost because it was only written at its end.
