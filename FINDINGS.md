@@ -3,6 +3,39 @@
 What the simulator has taught about driving each mind. Newest first. A row is
 one run; the record is under `runs/<scenario>/<mind>/cases/`.
 
+## 2026-10-09 — the installer driven through on three machines: what hid the faults
+
+The end-to-end runs (DBee Setup installs, a real fault, a case, an uninstall)
+found five faults in the harness and none that a sim would have shown:
+
+- **macOS: launchd's exits are not in the unified log** on macOS 26. `log
+  stream --process launchd` printed nothing for 30 s while an agent exited 1
+  every 10 s, and `log show` held none either. They are in launchd's own log,
+  `/var/log/com.apple.xpc.launchd/launchd.log` (world-readable); `tail -F`
+  delivers each line the second it is written. After the fix the Mac's case
+  woke, read, diagnosed `chmod 000` on the config and cured it in 5 turns
+  (the 4B, local).
+- **Windows: the Service Control Manager names a service by its display
+  name**, so every SCM event for a service with its own display name was
+  dropped. The limited task token was not the cause: it reads and subscribes
+  to the System log, measured.
+- **Any OS: a fault before the subscription is never seen.** The watch now
+  waits for each stream to be subscribed and reads each named service once.
+- **A slow mind was cut off by length, not silence**: a CPU-only 4B reads a
+  4.6k prompt for over 3 minutes; the call now streams with a 120 s silence
+  watchdog.
+- **The Linux container hides the decisive line.** In a podman `--systemd`
+  container, systemd's own exec failure (`Unable to locate executable
+  '/usr/sbin/cron': Permission denied`) never reaches the journal; only
+  `status=203/EXEC` does. The 4B, seeing that and `ExecStart=... $EXTRA_OPTS`,
+  blamed the unset variable over 9 turns. The first looks now show the
+  program's mode (`ls -lL`), which a real host's journal would also have
+  implied. A Linux score on a fault of exec permissions in that container is
+  partly the container's.
+
+Cases are now written after every turn and export as training data (`dbee
+export`); the Linux case above was lost because it was only written at its end.
+
 ## 2026-10-09 — every Linux look refused after M1 (a harness bug, fixed)
 
 From the M1 platform commit (89af5d7, 14:11) until this fix, the Linux
