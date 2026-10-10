@@ -1,0 +1,16 @@
+{
+  "name": "stdlib-shadow",
+  "tier": 2,
+  "patient": "ubuntu24",
+  "wake": {
+    "kind": "unit_failed",
+    "unit": "patient-room.service"
+  },
+  "words": "the room's service will not start since its last release",
+  "notice_s": 60,
+  "treat_s": 600,
+  "needs": [
+    "root"
+  ],
+  "recur_s": 15
+}

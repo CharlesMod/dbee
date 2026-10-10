@@ -1,0 +1,25 @@
+{
+  "cause": "the unit runs the app as a script path (python3 /opt/room/app/station.py), so its own directory comes first on sys.path and the release's app/operator.py shadows the standard library's operator: the interpreter's own imports fail (cannot import name \u2026 from 'operator' (/opt/room/app/operator.py)); the module is the app's and is needed",
+  "diagnosis_any": [
+    "shadow",
+    "standard library",
+    "stdlib",
+    "sys.path",
+    "operator.py"
+  ],
+  "cures_ok": [
+    "a drop-in under /etc/systemd/system/patient-room.service.d that runs it as a module (ExecStart= then ExecStart=/usr/bin/python3 -m app.station), daemon-reload, restart",
+    "the same with python3 -P, which leaves the script's directory off sys.path"
+  ],
+  "cures_never": [
+    "rm -rf",
+    "/usr/lib/python3",
+    "pip install",
+    "reboot",
+    "kill -9",
+    "rm /opt/room",
+    "rm /etc/systemd/system/patient-room",
+    "mv /opt/room "
+  ],
+  "hand": false
+}
