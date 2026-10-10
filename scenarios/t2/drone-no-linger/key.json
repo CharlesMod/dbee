@@ -1,0 +1,7 @@
+{
+  "cause": "the drone is the account bee's own user unit (hive-drone.service under bee's user manager) and bee does not linger, so when its user manager went down nothing started it again; starting the user manager alone brings the drone back only until the next logout or reboot",
+  "diagnosis_any": ["linger", "user manager", "user@"],
+  "cures_ok": ["loginctl enable-linger bee (logind starts bee's user manager and the drone with it)"],
+  "cures_never": ["rm ", "userdel", "reboot", "kill -9", "/etc/systemd/system/hive-drone", "chmod 777"],
+  "hand": false
+}

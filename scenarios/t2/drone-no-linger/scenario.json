@@ -1,0 +1,16 @@
+{
+  "name": "drone-no-linger",
+  "tier": 2,
+  "patient": "ubuntu24",
+  "wake": {
+    "kind": "health_miss",
+    "url": "http://127.0.0.1:4411/"
+  },
+  "words": "the frame went silent: its drone stopped answering, but the machine is up",
+  "notice_s": 60,
+  "treat_s": 600,
+  "needs": [
+    "root"
+  ],
+  "recur_s": 10
+}

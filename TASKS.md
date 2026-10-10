@@ -100,7 +100,7 @@ sha256), neither requires the other.
 - [ ] Hive looks: the court (GET only), `hive journal`, the drone's own logs, the probes in `assets/probes` — built 2026-10-09: `hive` is a look family held to its read verbs (journal, fleet, doctor and doctor case, needs show/plan, job status/logs, deploy status, queen show, roles, todo list…; `HIVE_READS` in `looks.py`), refusing every act (serve, run, roles tag, needs set, doctor hint/probe, job cancel, deploy) and `--follow`; the court is read by `curl` GET as before, the drone's logs by `journalctl`. Next: the probes in `assets/probes` as the harness's own looks
 - [ ] Hive cures: the runbook (`assets/runbook.jsonl`), reapply-pin, linger, the audio server; a release/hold/return of a sick frame through the court
 - [ ] Tier 2 for the Hive: a mini-Hive in a box (court, drone, a fake engine) replaying recorded faults: engine dead under its pin, no-linger, the stdlib shadow, a stale checkout, the court gone silent, a quarantine loop, the brain stranded on a slow card
-- [ ] The Hive's casebook and fault records imported as scenarios (a fault the fleet met becomes a test)
+- [ ] The Hive's casebook and fault records imported as scenarios (a fault the fleet met becomes a test) — the first, 2026-10-09: `scenarios/t2/drone-no-linger` (the fault recorded 2026-10-04: a user-unit drone, the account stops lingering, its user manager goes down; wakes on the drone's :4411 health; only `loginctl enable-linger` passes the check, starting the user manager alone does not). Validated on the patient image with libpam-systemd (built as `:ubuntu24-next`; retag it `:ubuntu24` once the running 4B sim ends)
 
 ## M3: Doctor Bee hooks
 

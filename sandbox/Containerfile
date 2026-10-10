@@ -6,7 +6,7 @@ FROM docker.io/library/ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        systemd systemd-sysv dbus \
+        systemd systemd-sysv dbus libpam-systemd \
         python3 curl iproute2 iputils-ping procps psmisc lsof util-linux \
         openssh-server nginx cron logrotate \
         ca-certificates less vim-tiny jq \
