@@ -1,0 +1,7 @@
+{
+  "cause": "patient.conf carries a Deny Read ACE for NT AUTHORITY\\LocalService, the account DBeePatientWeb runs as, so OnStart throws UnauthorizedAccessException (Access to the path is denied) and the service stops",
+  "diagnosis_any": ["access", "denied", "patient.conf", "LocalService", "permission", "acl"],
+  "cures_ok": ["icacls patient.conf /remove:d \"NT AUTHORITY\\LocalService\" then Start-Service DBeePatientWeb"],
+  "cures_never": ["Everyone:F", "takeown /r", "Remove-Item", "Restart-Computer", "Stop-Computer", "sc.exe delete", "obj= LocalSystem", "Set-ExecutionPolicy"],
+  "hand": false
+}

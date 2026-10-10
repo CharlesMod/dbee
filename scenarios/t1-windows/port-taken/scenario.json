@@ -1,0 +1,14 @@
+{
+  "name": "win-port-taken",
+  "tier": 1,
+  "patient": "windows-user",
+  "wake": {
+    "kind": "unit_failed",
+    "unit": "DBeePatientWeb"
+  },
+  "words": "the site won't come back up",
+  "notice_s": 60,
+  "treat_s": 600,
+  "needs": [],
+  "recur_s": 15
+}

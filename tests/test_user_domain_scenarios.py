@@ -25,3 +25,30 @@ def test_the_mac_scenarios_are_found_on_a_mac(monkeypatch):
     monkeypatch.setattr(sim.sys, "platform", "darwin")
     names = {sc["name"] for sc in sim.scenarios(sim.ROOT / "scenarios", "t1")}
     assert {"mac-perms-config", "mac-bad-path", "mac-port-taken"} <= names
+
+
+def test_a_windows_scenario_pipes_its_powershell_steps_with_the_shared_patient_first(tmp_path):
+    tier = tmp_path / "t1-windows"; d = tier / "x"; d.mkdir(parents=True)
+    (tier / "_patient.ps1").write_text("$Svc = 'DBeePatientWeb'")
+    for s in ("seed", "check", "unseed"):
+        (d / f"{s}.ps1").write_text(f"'{s}'")
+    seen = []
+
+    class _P:
+        def run(self, cmd, *, input=None, timeout=60):
+            seen.append((cmd, input))
+    sim.steps({"dir": d}, _P())("seed")
+    assert seen == [(sim.PS_STDIN, "$Svc = 'DBeePatientWeb'\n'seed'")]    # piped, never laid on the disk
+
+
+def test_a_linux_scenario_still_pipes_sh(tmp_path):
+    d = tmp_path / "t1" / "x"; d.mkdir(parents=True)
+    for s in ("seed", "check", "unseed"):
+        (d / f"{s}.sh").write_text(f"echo {s}")
+    seen = []
+
+    class _P:
+        def run(self, cmd, *, input=None, timeout=60):
+            seen.append((cmd, input))
+    sim.steps({"dir": d}, _P())("check")
+    assert seen == [("sh -s", "echo check")]

@@ -52,6 +52,24 @@ def patient_for(sc: dict, name: str):
     return Podman(name), True
 
 
+PS_STDIN = "& ([scriptblock]::Create([Console]::In.ReadToEnd()))"   # a piped script, run as one block
+
+
+def steps(sc: dict, patient):
+    """The scenario's three steps (seed, check, unseed) and how each runs: `.ps1`
+    through PowerShell when the scenario ships them, else `.sh` through sh. Piped in
+    and never written to the patient's disk: a doctor that reads the machine must
+    not find the key. A tier's `_patient.<ext>` beside its scenarios (the patient
+    they share) is put before each step. Returns run(step, timeout) -> Result, step
+    being "seed", "check" or "unseed"."""
+    ext = "ps1" if (sc["dir"] / "seed.ps1").exists() else "sh"
+    shared = sc["dir"].parent / f"_patient.{ext}"
+    head = shared.read_text() + "\n" if shared.exists() else ""
+    text = {s: head + (sc["dir"] / f"{s}.{ext}").read_text() for s in ("seed", "unseed", "check")}
+    line = PS_STDIN if ext == "ps1" else "sh -s"
+    return lambda step, timeout=60: patient.run(line, input=text[step], timeout=timeout)
+
+
 def load_scenario(path: Path) -> dict:
     sc = json.loads((path / "scenario.json").read_text())
     sc["dir"] = path
@@ -125,9 +143,7 @@ def run(sc: dict, mind, *, runs_dir: Path, say=None, keep: bool = False, name: s
     # lay the scenario's scripts and any runbook fixes
     # The scenario's own scripts (the break, the check, the undo) are piped in and never
     # written to the patient's disk: a doctor that reads the machine must not find the key.
-    script = {f: (sc["dir"] / f).read_text() for f in ("seed.sh", "unseed.sh", "check.sh")}
-    def sh(name, timeout=60):
-        return patient.run("sh -s", input=script[name], timeout=timeout)
+    sh = steps(sc, patient)
     if owned:
         patient.run("mkdir -p /var/lib/dbee/fixes")
         fixes = ROOT / "assets" / "fixes"
@@ -138,13 +154,13 @@ def run(sc: dict, mind, *, runs_dir: Path, say=None, keep: bool = False, name: s
         # a machine that has been up a while: what its boot touched is old news, so the
         # doctor's "what changed" shows the fault, not the container starting
         patient.run("find /etc /opt /usr/local /srv -xdev -newermt '-10 minutes' -exec touch -h -d '3 hours ago' {} + 2>/dev/null; true")
-    base = sh("check.sh")
+    base = sh("check")
     if base.code != 0:
         say(f"   patient not healthy before the seed: {base.out.strip()}")
     q: Queue = Queue()
     watchers = arm(patient, sc, q)
     seeded_at = time.time()
-    s = sh("seed.sh", timeout=120)
+    s = sh("seed", timeout=120)
     say(f"   seed [exit {s.code}]: {s.out.strip().splitlines()[-1] if s.out.strip() else ''}")
     result = {"scenario": sc["name"], "mind": mind.name, "patient": name, "seed_code": s.code}
     if s.code == 4:
@@ -201,7 +217,7 @@ def run(sc: dict, mind, *, runs_dir: Path, say=None, keep: bool = False, name: s
     # a job finishing its warm-up), bounded; red past that is red
     end = time.time() + sc.get("settle_s", 30)
     while True:
-        chk = sh("check.sh")
+        chk = sh("check")
         if chk.code == 0 or time.time() > end:
             break
         time.sleep(2)
@@ -217,7 +233,7 @@ def run(sc: dict, mind, *, runs_dir: Path, say=None, keep: bool = False, name: s
         f"cause_removed={score['said_cause_removed']} reopened={score['reopened']} "
         f"woke={score['woke_s']}s treat={score['treat_s']}s looks={score['looks']} cures={score['cures']} "
         f"unsafe={len(score['unsafe'])} tokens={score['tokens_in']}+{score['tokens_out']}")
-    sh("unseed.sh", timeout=60)
+    sh("unseed", timeout=60)
     if owned and not keep:
         patient.down()
     runs_dir.mkdir(parents=True, exist_ok=True)
@@ -250,14 +266,14 @@ def validate(sc: dict, *, say=print, settle_s: float = 8) -> dict:
     try:
         if owned:
             patient.up(IMAGE, disk_mb=sc.get("disk_mb", 64) if "disk" in sc["name"] else 0)
-        script = {f: (sc["dir"] / f).read_text() for f in ("seed.sh", "unseed.sh", "check.sh")}
-        sh = lambda n, t=120: patient.run("sh -s", input=script[n], timeout=t)
+        run = steps(sc, patient)
+        sh = lambda n, t=120: run(n, t)
         if owned:
             patient.run("systemctl start patient-web.service; sleep 2")
         q: Queue = Queue()
         ws = arm(patient, sc, q)
-        out["check0"] = sh("check.sh").code
-        s = sh("seed.sh")
+        out["check0"] = sh("check").code
+        s = sh("seed")
         out["seed"] = s.code
         try:
             wk = q.get(timeout=max(sc.get("notice_s", 60) - 0, 1))
@@ -267,10 +283,10 @@ def validate(sc: dict, *, say=print, settle_s: float = 8) -> dict:
         for w in ws:
             w.end()
         time.sleep(settle_s)
-        out["check1"] = sh("check.sh").code
-        out["unseed"] = sh("unseed.sh").code
+        out["check1"] = sh("check").code
+        out["unseed"] = sh("unseed").code
         end = time.time() + 30
-        while (c := sh("check.sh")).code != 0 and time.time() < end:
+        while (c := sh("check")).code != 0 and time.time() < end:
             time.sleep(2)
         out["check2"] = c.code
         if owned:

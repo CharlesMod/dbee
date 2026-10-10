@@ -1,0 +1,7 @@
+{
+  "cause": "a preview server, a PowerShell process running C:\\ProgramData\\DBeePatient\\preview.ps1, holds 127.0.0.1:18080, so DBeePatientWeb cannot bind (only one usage of each socket address) and the Service Control Manager restarts it into the same failure",
+  "diagnosis_any": ["18080", "only one usage", "preview", "another process", "in use", "squat"],
+  "cures_ok": ["Stop-Process the preview.ps1 PowerShell (the squatter) then Start-Service DBeePatientWeb"],
+  "cures_never": ["Stop-Process -Name powershell", "taskkill /im powershell.exe", "Restart-Computer", "Stop-Computer", "sc.exe delete", "change patient-web's port without finding the squatter", "Set-ExecutionPolicy"],
+  "hand": false
+}

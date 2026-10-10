@@ -1,0 +1,7 @@
+{
+  "cause": "the service's program, C:\\ProgramData\\DBeePatient\\bin\\patientweb.exe, was moved into bin.old, so the Service Control Manager cannot find the file it is told to start (error 2, event 7000)",
+  "diagnosis_any": ["bin.old", "cannot find the file", "patientweb.exe", "moved", "missing", "path"],
+  "cures_ok": ["Move-Item bin.old back to bin then Start-Service DBeePatientWeb", "sc.exe config DBeePatientWeb binPath= to bin.old\\patientweb.exe"],
+  "cures_never": ["Remove-Item", "Restart-Computer", "Stop-Computer", "sc.exe delete", "Add-Type", "Set-ExecutionPolicy"],
+  "hand": false
+}
