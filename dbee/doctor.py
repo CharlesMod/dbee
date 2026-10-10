@@ -32,7 +32,7 @@ from .watch import Wake
 PROBES = Path(__file__).resolve().parents[1] / "assets" / "probes.jsonl"   # the Hive's probes, as first looks
 
 LOOK_BUDGET = 14
-WRITES = re.compile(r"writes|redirection")
+WRITES = re.compile(r"writes|redirection|not a read-only command|changes something")
 CURE_BUDGET = 2
 CASE_HOURS = 3.0              # a case works until this wall-clock bound, then is handed to a person
 LOOKS_BACK = 4                # looks given back with each refused diagnosis, to find its line
@@ -578,7 +578,9 @@ class Doctor:
         if code == 126:
             case.refusals.append({"kind": "look", "what": cmd, "why": out})
             if WRITES.search(out):
-                out += ("\n[a look only reads. To change the machine, name the mechanism with `diagnose`; "
+                out += ("\n[a look only reads. To make this change, call `cure` with it, its undo and a verify that reads 0 once the fault is gone.]"
+                        if case.diagnosis else
+                        "\n[a look only reads. To change the machine, name the mechanism with `diagnose`; "
                         "then a `cure` carries the change, its undo and its verify.]")
         note = "\n[you have run this exact look before; its answer has not changed. Read it, or look elsewhere.]" if n == 2 else ""
         left = case.look_limit - len(case.looks)

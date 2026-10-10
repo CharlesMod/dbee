@@ -224,3 +224,11 @@ def test_a_mind_that_does_not_answer_makes_the_case_wait_not_end(tmp_path):
     mind = _Down(("look", {"cmd": "ls -lL /usr/sbin/cron"}), READ, HAND)
     case = Doctor(_Patient(), mind, home=tmp_path).treat(Wake("unit_failed", "cron.service"), case_id="c-down")
     assert case.end == "handed" and case.diagnosis
+
+
+def test_a_change_sent_as_a_look_after_the_diagnosis_is_pointed_at_cure(tmp_path):
+    # seen live on DESKTOP: the 26B sent Start-Service as a look, was refused, and handed the case over
+    mind = _Script(("look", {"cmd": "ls -lL /usr/sbin/cron"}), READ, ("look", {"cmd": "systemctl start cron"}), HAND)
+    case = Doctor(_Patient(), mind, home=tmp_path).treat(Wake("unit_failed", "cron.service"), case_id="c-wl")
+    said = [m["content"] for m in case.transcript if m.get("role") == "tool"]
+    assert any("call `cure` with it" in t for t in said)
