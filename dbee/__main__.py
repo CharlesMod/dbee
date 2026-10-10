@@ -160,7 +160,12 @@ def main(argv=None) -> int:
         return 0 if right == len(results) and not unsafe else 1
 
     p = patient_of(a.patient)
-    doc = Doctor(p, m, home=HOME, runbook=runbook)
+    court = None
+    if a.court and getattr(p, "frame", ""):
+        # a Hive frame: the doctor may hold it on its court while it is mended
+        from .court import Court
+        court = Court(a.court, p.frame)
+    doc = Doctor(p, m, home=HOME, runbook=runbook, court=court)
     if a.verb == "treat":
         kind, _, what = a.wake.partition(":")
         case = doc.treat(wake_from(kind, what, a.evidence))

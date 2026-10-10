@@ -67,6 +67,15 @@ TOOLS = [
                                           "required": ["cause", "cause_removed", "finding"]}}},
 ]
 
+# A Hive frame's triage, offered only when the doctor has the frame's court: the frame
+# held while it is mended, and returned (a hold's undo). Hold or return, never both.
+COURT_TOOLS = [
+    {"type": "function", "function": {"name": "hold", "description": "Hold this frame on the Hive's court while it is mended: the fleet's work goes round it, and your own looks and cures still reach it. Undone by `return`.",
+                                      "parameters": {"type": "object", "properties": {"why": {"type": "string", "minLength": 8}}, "required": ["why"]}}},
+    {"type": "function", "function": {"name": "return", "description": "Return this frame to the fleet's work once it is mended (the hold's undo).",
+                                      "parameters": {"type": "object", "properties": {"why": {"type": "string", "minLength": 8}}, "required": ["why"]}}},
+]
+
 
 SNAP_MAX = 64 << 20          # a file larger than this is not copied before a cure (say so: it is not kept)
 WIN_PATH = re.compile(r"'([A-Za-z]:\\[^']+)'|\"([A-Za-z]:\\[^\"]+)\"|([A-Za-z]:\\[^\s'\";|,)]+)")
@@ -103,6 +112,8 @@ class Case:
     mind: str = ""                                       # the model that answered
     platform: str = ""
     turn_log: list = field(default_factory=list)         # one per call: the kit offered, its reply, timing
+    held: bool = False                                   # this case holds its frame on the court
+    court_acts: list = field(default_factory=list)       # {act, why, at, taken, said}
 
     def save(self, root: Path) -> Path:
         """Whole or not at all: written beside, then renamed over, after every turn,
@@ -157,8 +168,10 @@ def _gist(out: str) -> str:
 
 
 class Doctor:
-    def __init__(self, patient, mind, *, home: Path, runbook: Runbook | None = None, say=print, max_tokens: int = 0):
+    def __init__(self, patient, mind, *, home: Path, runbook: Runbook | None = None, say=print, max_tokens: int = 0,
+                 court=None):
         self.patient, self.mind, self.home, self.say = patient, mind, home, say
+        self.court = court                     # a Hive frame's court (dbee.court.Court): hold and return
         # a reply's budget; a mind that thinks before it answers needs room for both
         self.max_tokens = max_tokens or int(os.environ.get("DBEE_MAX_TOKENS", "700"))
         # reasoning effort per phase, for minds that think (DBEE_EFFORT="triage=low,treat=medium");
@@ -199,6 +212,7 @@ class Doctor:
                                  "finding": (case.diagnosis or {}).get("cause") or
                                             f"no diagnosis grounded in what was read ({case.ungrounded} refused)"}
                     case.end, case.finding = "handed", case.hand["finding"]
+                    self._still_held(case)
                     self.say(f"[{case.id}] handed: {case.hand['step']}")
                     break
                 try:
@@ -269,9 +283,12 @@ class Doctor:
                             out = self._do_cure(case, a, wake)
                             if not out.startswith("refused"):
                                 case.close_blocked = False
+                    elif name in ("hold", "return") and self.court is not None:
+                        out = self._court_word(case, name, str(a.get("why") or "").strip())
                     elif name == "hand":
                         case.hand = {"step": a.get("step", ""), "finding": a.get("finding", "")}
                         case.end, case.finding = "handed", a.get("finding", "")
+                        self._still_held(case)
                         self.say(f"[{case.id}] handed: {case.hand['step'][:200]}")
                         break
                     elif name == "close" and case.close_blocked:
@@ -284,6 +301,8 @@ class Doctor:
                         ok, why = self._may_close(case, wake)
                         if ok:
                             case.end, case.finding = "closed", a.get("finding", "")
+                            if case.held:      # mended: the frame goes back to the fleet's work
+                                self._court_word(case, "return", "the case closed: the frame is mended")
                             self.say(f"[{case.id}] closed: {case.finding[:200]}")
                             break
                         out = f"refused: {why}"
@@ -307,6 +326,28 @@ class Doctor:
         return case
 
     # ------------------------------------------------------------- the pieces
+    def _court_word(self, case: Case, verb: str, why: str) -> str:
+        """The frame held or returned on the court, with the case and why."""
+        if (verb == "hold") == case.held:
+            return f"refused: the frame is {'already' if case.held else 'not'} held"
+        if len(why) < 8:
+            return f"refused: a {verb} says why, in a line"
+        taken, said = self.court.word(verb, case.id, why)
+        case.court_acts.append({"act": verb, "why": why, "at": time.time(), "taken": taken, "said": said})
+        if not taken:
+            return f"refused: {said}"
+        case.held = verb == "hold"
+        self.say(f"[{case.id}] {'held' if case.held else 'returned'} {self.court.frame}: {why[:160]}")
+        return (f"held {self.court.frame}: the fleet's work goes round it; your looks and cures still reach it. "
+                "`return` it once it is mended (a close returns it)." if case.held else
+                f"returned {self.court.frame} to the fleet's work.")
+
+    def _still_held(self, case: Case) -> None:
+        """A hand-off leaves the frame held: the person who takes it returns it."""
+        if case.held and case.hand is not None:
+            case.hand["step"] += (f" (the frame {self.court.frame} stays held on the court; return it with "
+                                  f"POST {self.court.url}/v1/drones/{self.court.frame}/return once it is mended)")
+
     def _ask(self, case: Case, msgs, phase):
         if phase == "triage" and (len(case.looks) >= case.look_limit or case.decide_now):
             tools = [t for t in TOOLS if t["function"]["name"] in ("diagnose", "hand")]
@@ -318,6 +359,8 @@ class Doctor:
             tools = TOOLS if phase == "treat" else [t for t in TOOLS if t["function"]["name"] in ("look", "diagnose", "hand")]
         if case.close_blocked:
             tools = [t for t in tools if t["function"]["name"] != "close"]
+        if self.court is not None:
+            tools = tools + [t for t in COURT_TOOLS if t["function"]["name"] == ("return" if case.held else "hold")]
         effort = self.effort.get(phase, "")
         r = self.mind.chat(msgs, tools=tools, max_tokens=self.max_tokens, effort=effort)
         case.turns += 1
@@ -791,12 +834,15 @@ def case_record(c: dict) -> dict:
     `turns` and the outcome in `meta` (won: closed with a verify that passed)."""
     cures = c.get("cures") or []
     won = c.get("end") == "closed" and bool(cures) and cures[-1].get("verify_code") == 0
-    return {"messages": c.get("transcript") or [], "tools": TOOLS, "turns": c.get("turn_log") or [],
+    offered = {n for t in c.get("turn_log") or [] for n in t.get("tools") or []}
+    tools = TOOLS + [t for t in COURT_TOOLS if t["function"]["name"] in offered]
+    return {"messages": c.get("transcript") or [], "tools": tools, "turns": c.get("turn_log") or [],
             "meta": {"case": c.get("id"), "mind": c.get("mind", ""), "platform": c.get("platform", ""),
                      "patient": c.get("patient"), "wake": c.get("wake"), "end": c.get("end"),
                      "won": won, "finding": c.get("finding"), "diagnosis": c.get("diagnosis"),
                      "cures": [{"command": (x.get("cure") or {}).get("command"), "verify_code": x.get("verify_code"),
                                 "undone": x.get("undone")} for x in cures],
+                     "court_acts": c.get("court_acts") or [],
                      "refusals": len(c.get("refusals") or []), "tokens_in": c.get("tokens_in"),
                      "tokens_out": c.get("tokens_out"), "mind_s": c.get("mind_s"),
                      "complete": bool(c.get("closed"))}}
