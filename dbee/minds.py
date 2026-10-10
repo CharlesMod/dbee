@@ -25,7 +25,7 @@ import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from waspdoctor.protocol import NoSeat, Reply  # noqa: F401  (the loop's shapes)
+from waspdoctor.protocol import NoSeat, Reply, TooLong  # noqa: F401  (the loop's shapes)
 
 SECRETS = Path.home() / ".config" / "dbee" / "secrets.env"
 
@@ -221,6 +221,9 @@ class HiveMind:
             code, body = _get(f"{self.court}/v1/route?{q}", timeout=hold + 20)
             if code == 200 and body.get("url"):
                 return body
+            if code == 413 or body.get("error") == "too_long":
+                # no seat holds a call this long: waiting will not change it (the loop trims it)
+                raise TooLong(f"{self.model}: {body.get('detail') or body.get('why') or body}")
             last = body
             if time.time() > deadline:
                 break
@@ -445,6 +448,8 @@ class FallbackMind:
         if not self.fell_back:
             try:
                 return self.primary.chat(messages, tools, **kw)
+            except TooLong:
+                raise                  # the Hive answers; the call is too long (the engine's seat is no longer)
             except urllib.error.HTTPError as e:
                 if e.code < 500:
                     raise
