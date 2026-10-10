@@ -1,10 +1,4 @@
 #!/bin/sh
-# HELD: a cgroup OOM kill in any container raises the host's /proc/vmstat oom_kill, which the
-# hive's drone reads as its engine being killed, and it refuses the pin it serves for 6 h
-# (swarm/drone/reconcile.go noteOOMKills). Seeding this on a frame that serves a model
-# evicts that model. Refused until the drone counts only its own engine's kills, or the
-# sim runs on a frame that serves nothing.
-[ -z "$DBEE_ALLOW_HOST_OOM" ] && { echo "refused: a cgroup OOM here evicts the hive's served model (held)"; exit 4; }
 # A batch unit capped at 20M whose job grows to ~40M: the cgroup OOM killer ends it.
 # Wake note: the unit's own 'Failed with result oom-kill' line wakes the doctor (unit_failed);
 # the kernel's OOM line is not relied on inside a container.

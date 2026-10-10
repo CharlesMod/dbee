@@ -12,6 +12,5 @@
   "needs": [
     "root"
   ],
-  "held": "a cgroup OOM raises the host's oom_kill count; the hive's drone then refuses its served pin for 6 h",
   "recur_s": 15
 }
