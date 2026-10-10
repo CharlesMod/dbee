@@ -182,6 +182,8 @@ class Hive(Patient):
     PS = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
     DONE = __import__("re").compile(r"^\S+: (succeeded|failed|cancelled|timed out)[^\n]*?exit (-?\d+)[^\n]*\(job \w+\)\s*$", __import__("re").M)
 
+    runs_as_drone = True              # `hive run` runs as the frame's drone: its probes read true here
+
     def __init__(self, frame: str, shell: str = "sh", hive: str = ""):
         import shutil
         self.frame, self.name, self.shell = frame, frame, shell

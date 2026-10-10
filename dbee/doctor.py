@@ -385,9 +385,11 @@ class Doctor:
     def _probes(self, wake: Wake) -> list[tuple[str, str]]:
         """The Hive's own probes (`assets/probes.jsonl`, read-only, verdict first) that
         read the frame a wake is about: the drone's and its engines' for a wake about
-        the drone, the ears' for a wake about a room. Each runs as one line of sh, its
-        script carried in the line, so any patient that runs sh runs it."""
-        if self.patient.platform.shell != "sh":
+        the drone, the ears' for a wake about a room, on a patient whose commands the
+        drone runs. Each runs as one line of sh, its script carried in the line."""
+        if self.patient.platform.shell != "sh" or not getattr(self.patient, "runs_as_drone", False):
+            # a probe reads its own context (/proc/self/cgroup, id -un): only the drone's own
+            # run of it (a Hive patient) states true facts; run by root beside it, it would not
             return []
         what = f"{wake.what} {wake.evidence}".lower()
         if re.search(r"hive-drone|:4411\b|\bdrone\b", what):
