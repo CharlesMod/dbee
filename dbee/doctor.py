@@ -51,9 +51,9 @@ TOOLS = [
     {"type": "function", "function": {"name": "look", "description": "Run one read-only command on the patient (a command from a read-only family, up to three filters: grep/tail/head/wc/sort/uniq/cut/awk/sed/jq). Returns exit code and the output's tail.",
                                       "parameters": {"type": "object", "properties": {"cmd": {"type": "string"}}, "required": ["cmd"]}}},
     {"type": "function", "function": {"name": "diagnose", "description": "End triage by naming the mechanism, quoting the evidence line it rests on.",
-                                      "parameters": {"type": "object", "properties": {"cause": {"type": "string", "description": "the mechanism, one or two sentences"}, "evidence": {"type": "string", "description": "the line(s) you read that show it"}, "confidence": {"type": "number", "minimum": 0, "maximum": 1}}, "required": ["cause", "evidence"]}}},
+                                      "parameters": {"type": "object", "properties": {"cause": {"type": "string", "description": "the mechanism, one or two sentences"}, "evidence": {"type": "string", "minLength": 12, "description": "the line(s) you read that show it"}, "confidence": {"type": "number", "minimum": 0, "maximum": 1}}, "required": ["cause", "evidence"]}}},
     {"type": "function", "function": {"name": "cure", "description": "Apply one cure: a one-line command, its undo, and a read-only verify whose exit 0 means the fault is gone. The undo is recorded before the command runs.",
-                                      "parameters": {"type": "object", "properties": {"command": {"type": "string"}, "undo": {"type": "string"}, "verify": {"type": "string"}, "why": {"type": "string"}}, "required": ["command", "undo", "verify", "why"]}}},
+                                      "parameters": {"type": "object", "properties": {"command": {"type": "string", "minLength": 1}, "undo": {"type": "string", "minLength": 1}, "verify": {"type": "string", "minLength": 1}, "why": {"type": "string"}}, "required": ["command", "undo", "verify", "why"]}}},
     {"type": "function", "function": {"name": "hand", "description": "Hand the case to a person: the step only they can take, and what you found.",
                                       "parameters": {"type": "object", "properties": {"step": {"type": "string"}, "finding": {"type": "string"}}, "required": ["step", "finding"]}}},
     {"type": "function", "function": {"name": "close", "description": "Close the case: the fault is gone (only after a green verify), and say whether the CAUSE you diagnosed is removed or only its symptom cleared.",
@@ -234,9 +234,12 @@ class Doctor:
                                                   "why": "evidence not in anything read"})
                             # looks back, to find the line the mechanism shows
                             case.look_limit = max(case.look_limit, len(case.looks) + LOOKS_BACK)
+                            near = self._nearest_line(a.get("evidence", ""), first, case)
                             msgs.append({"role": "tool", "tool_call_id": tc.get("id", ""), "name": name,
                                          "content": "refused: the evidence is not in anything you have read. "
-                                                    "Quote a line exactly as a look printed it, or look for the line that shows the mechanism."})
+                                                    "Quote a line exactly as a look printed it (a command you ran is not evidence), "
+                                                    "or look for the line that shows the mechanism." +
+                                                    (f"\nThe nearest line a look printed: {near}" if near else "")})
                             continue
                         case.diagnosis = {"cause": a.get("cause", ""), "evidence": a.get("evidence", ""),
                                          "confidence": a.get("confidence"), "at": time.time()}
@@ -391,6 +394,16 @@ class Doctor:
                     + " " + " ".join(c.get("out", "") + c.get("verify_out", "") for c in case.cures))
         pieces = [norm(p).strip(" .,'\"`") for p in re.split(r"[\n;]|\.\.\.", evidence or "")]
         return any(len(p) >= 12 and p in seen for p in pieces)
+
+    @staticmethod
+    def _nearest_line(evidence: str, first: str, case: "Case") -> str:
+        """The printed line most like the refused evidence, shown back so a small mind
+        can quote it exactly; the grounding itself is unchanged."""
+        import difflib
+        lines = [l.strip() for t in [first] + [l.get("out", "") for l in case.looks] for l in t.splitlines()]
+        lines = [l for l in lines if len(l) >= 12]
+        best = difflib.get_close_matches(evidence.strip(), lines, n=1, cutoff=0.3)
+        return best[0][:300] if best else ""
 
     def _targets(self, command: str) -> list[str]:
         """The files a cure would write: cp/mv/install destinations, redirection

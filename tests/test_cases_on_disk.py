@@ -198,3 +198,13 @@ def test_a_cure_that_changes_nothing_is_still_undone(tmp_path):
     mind = _Script(("look", {"cmd": "ls -lL /usr/sbin/cron"}), diag, noop, HAND)
     case = Doctor(p, mind, home=tmp_path).treat(Wake("unit_failed", "nginx.service"), case_id="c-7")
     assert case.cures[0].get("undone") and not case.cures[0].get("progress") and "semicolon" in p.left
+
+
+def test_a_refused_diagnosis_shows_the_nearest_line_a_look_printed(tmp_path):
+    # seen live: a 4B quoted the command it ran, not its output, 32 times over
+    QUOTED_CMD = ("diagnose", {"cause": "cron lost its execute bit", "evidence": "$ ls -lL /usr/sbin/cron: root root 60080 /usr/sbin/cron"})
+    mind = _Script(("look", {"cmd": "ls -lL /usr/sbin/cron"}), QUOTED_CMD, ("look", {"cmd": "uptime"}), READ, HAND)
+    case = Doctor(_Patient(), mind, home=tmp_path).treat(Wake("unit_failed", "cron.service"), case_id="c-near")
+    said = [m["content"] for m in case.transcript if m.get("role") == "tool" and "refused: the evidence" in m.get("content", "")]
+    assert said and "nearest line a look printed: -rw-r--r-- 1 root root 60080" in said[0]
+    assert case.ungrounded == 1 and case.diagnosis["evidence"].startswith("-rw-r--r--")      # the grounding is unchanged
