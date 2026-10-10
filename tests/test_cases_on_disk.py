@@ -208,3 +208,19 @@ def test_a_refused_diagnosis_shows_the_nearest_line_a_look_printed(tmp_path):
     said = [m["content"] for m in case.transcript if m.get("role") == "tool" and "refused: the evidence" in m.get("content", "")]
     assert said and "nearest line a look printed: -rw-r--r-- 1 root root 60080" in said[0]
     assert case.ungrounded == 1 and case.diagnosis["evidence"].startswith("-rw-r--r--")      # the grounding is unchanged
+
+
+def test_a_mind_that_does_not_answer_makes_the_case_wait_not_end(tmp_path):
+    # seen live on DESKTOP: a router call timed out (WinError 10060) and the case ended in error
+    import urllib.error
+
+    class _Down(_Script):
+        def chat(self, msgs, tools=None, max_tokens=0, effort=""):
+            if self.n == 1 and not getattr(self, "_failed", False):
+                self._failed = True
+                raise urllib.error.URLError(TimeoutError("[WinError 10060] the connected party did not respond"))
+            return super().chat(msgs, tools, max_tokens, effort)
+
+    mind = _Down(("look", {"cmd": "ls -lL /usr/sbin/cron"}), READ, HAND)
+    case = Doctor(_Patient(), mind, home=tmp_path).treat(Wake("unit_failed", "cron.service"), case_id="c-down")
+    assert case.end == "handed" and case.diagnosis

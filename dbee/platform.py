@@ -308,7 +308,7 @@ PS_DANGER = re.compile(r"(?i)(\bInvoke-Expression\b|\biex\b|\bInvoke-Command\b|\
                        r"\bInvoke-RestMethod\b|\birm\b|\bOut-File\b|\bTee-Object\b|\bSet-Content\b|\bAdd-Content\b|-EncodedCommand|"
                        r"\bStart-Job\b|\bRegister-\w+|\bUnregister-\w+|\bEnter-PSSession\b)")
 PS_REDIRECT = re.compile(r"(?<![\w$])(?:\*|[1-6])?>>?(?!\s*\$null)|(?<![\w$-])&\s*(?=[\"'$({\w.\\])")
-PS_CMD = re.compile(r"(?<![\w$.-])([A-Za-z]+-[A-Za-z][A-Za-z0-9]*|[A-Za-z][\w.]*\.exe)(?![\w-])")
+PS_CMD = re.compile(r"(?<![\w$.\\/:-])([A-Za-z]+-[A-Za-z][A-Za-z0-9]*|[A-Za-z][\w.]*\.exe)(?![\w-])")   # a name inside a path is not a command
 WIN_SECRET = re.compile(r"(?i)(\\config\\SAM|\\config\\SECURITY|unattend\.xml|\.pfx\b|\.pem\b|\.key\b|ConsoleHost_history|"
                         r"\bGet-Credential\b|ConvertFrom-SecureString|\bdpapi|\\Microsoft\\Credentials|\\Microsoft\\Protect)")
 
@@ -374,8 +374,8 @@ WIN_NEVER = [
     (re.compile(r"(?i)\bvssadmin\b.*\bdelete|\bwbadmin\b.*\bdelete|\bRemove-WBBackupSet"), "removing backups or shadow copies"),
     (re.compile(r"(?i)\bwevtutil\s+(cl|clear-log)\b|\bClear-EventLog\b|\bRemove-EventLog\b"), "clearing the event logs"),
     (re.compile(r"(?i)\bcipher\s+/w"), "wiping free space"),
-    (re.compile(r"(?i)\b(Remove-Item|rm|rmdir|rd|del)\b.*-Recurse.*C:\\(Windows|Program Files( \(x86\))?)(\\|\s|$|\*|\"|')"), "a recursive delete inside a system tree"),
-    (re.compile(r"(?i)\b(Remove-Item|rm|rmdir|rd|del)\b.*-Recurse.*C:\\(Users|ProgramData)\\?(\s|$|\*|\"|')"), "a recursive delete of a system tree"),
+    (re.compile(r"(?i)\b(Remove-Item|rm|rmdir|rd|del)\b.*-Recurse.*C:\\(Windows|Program Files( \(x86\))?)(\\|\s|$|\*|\"|'|[})\]])"), "a recursive delete inside a system tree"),
+    (re.compile(r"(?i)\b(Remove-Item|rm|rmdir|rd|del)\b.*-Recurse.*C:\\(Users|ProgramData)\\?(\s|$|\*|\"|'|[})\]])"), "a recursive delete of a system tree"),
     (re.compile(r"(?i)\b(reg(\.exe)?\s+delete|Remove-Item\b.*HKLM:\\(SYSTEM|SOFTWARE|SAM|SECURITY))"), "deleting the registry"),
     (re.compile(r"(?i)\b(net\s+user|Remove-LocalUser|Set-LocalUser|Disable-LocalUser|net\s+localgroup)\b"), "a user or group change"),
     (re.compile(r"(?i)\b(Set-MpPreference|Add-MpPreference)\b.*-Disable|\bDisable-WindowsOptionalFeature\b|\bSet-ExecutionPolicy\s+(Unrestricted|Bypass)"), "turning off the machine's protection"),
@@ -388,7 +388,7 @@ WIN_CURE_VERBS = {"restart-service", "start-service", "stop-service", "set-servi
                   "new-itemproperty", "stop-process", "set-acl", "icacls", "sc", "sc.exe", "netsh", "certutil",
                   "ipconfig", "w32tm", "wevtutil", "schtasks", "import-certificate", "remove-netfirewallrule",
                   "set-netfirewallrule", "enable-scheduledtask", "start-scheduledtask", "set-dnsclientserveraddress",
-                  "out-file", "compress-archive", "start-sleep", "write-output"}
+                  "out-file", "compress-archive", "start-sleep", "write-output", "out-null"}
 
 
 def check_ps_cure(cmd: str) -> str:
@@ -399,16 +399,43 @@ def check_ps_cure(cmd: str) -> str:
     for pat, why in WIN_NEVER:
         if pat.search(cmd):
             return f"never: {why}"
-    for seg in re.split(r"[|;]|&&|\|\|", re.sub(r"\{[^{}]*\}|'[^']*'|\"[^\"]*\"", " ", cmd)):
+    if re.search(r"(?:^|[\s;|(=])[.&]\s*[{'\"$(]", cmd):
+        return "running a scriptblock or a path (`.` or `&`) hides the command; write the command itself"
+    # every command, inside a scriptblock, parentheses or an assignment too, is a cure verb
+    bare = re.sub(r"\$[\w:]+\s*=(?!=)", ";", re.sub(r"'[^']*'|\"[^\"]*\"", " ", cmd))   # `$x = cmd` runs cmd
+    for seg in re.split(r"[|;{}()]|&&|\|\|", bare):
         words = seg.strip().split()
         if not words:
             continue
         w0 = words[0].lower()
-        if w0.startswith("$") or w0[0] in "@[(.'\"0123456789":
+        if w0.startswith("$") or w0[0] in "@[.'\"0123456789-":
             continue
         if w0 in WIN_CURE_VERBS or _ps_reads(words[0]) or w0 in PS_ALIASES or w0 in WIN_NATIVE:
+            if (w := _ps_runs_anything(w0, cmd)):
+                return w
             continue
         return f"`{words[0]}` is not a verb a cure may use"
+    return ""
+
+
+WIN_INTERPRETERS = r"(?i)\b(cmd|powershell|pwsh|wscript|cscript|mshta|rundll32|regsvr32|msiexec|bash|wsl)(\.exe)?\b|\s/c\s"
+
+
+def _ps_runs_anything(verb: str, cmd: str) -> str:
+    """Why this Windows verb would run a program the shape never saw, or ''."""
+    low = cmd.lower()
+    if verb in ("schtasks", "schtasks.exe") and re.search(r"(?i)/create\b|/tr\b|/xml\b", cmd):
+        return "`schtasks /create` (or /tr) installs a program to run; it is not a cure"
+    if verb in ("sc", "sc.exe") and (re.search(r"(?i)\bsc(\.exe)?\s+create\b", cmd) or
+                                     re.search(r"(?i)\bcommand=", cmd) or
+                                     (re.search(r"(?i)binpath=", cmd) and re.search(WIN_INTERPRETERS, cmd))):
+        return "`sc` that creates a service or names a program to run (an interpreter in binPath, a failure command) is not a cure"
+    if verb in ("set-service", "new-service") and (verb == "new-service" or (re.search(r"(?i)-BinaryPathName", cmd) and re.search(WIN_INTERPRETERS, cmd))):
+        return "a service that runs an interpreter is not a cure"
+    if verb == "certutil" and not re.search(r"(?i)-(addstore|delstore|repairstore|verifystore)\b", cmd):
+        return "`certutil` only adds, removes or repairs a certificate in a store in a cure"
+    if verb == "netsh" and re.search(r"(?i)\breset\b", low):
+        return "`netsh … reset` resets the machine's network settings; it is not a cure"
     return ""
 
 

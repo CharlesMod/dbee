@@ -14,6 +14,7 @@ so; a third time ends triage (the mind's thinking is going round).
 """
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import re
@@ -204,6 +205,11 @@ class Doctor:
                 except NoSeat as e:
                     # the Hive is busy: the case waits for a seat until its own clock, never ends on it
                     self.say(f"[{case.id}] still waiting for a seat: {str(e)[:160]}")
+                    continue
+                except (OSError, http.client.HTTPException) as e:
+                    # the mind did not answer within its own wait (a court restarting, a link down):
+                    # the case waits on, bounded by its clock, as for a seat; it is not the patient's fault
+                    self.say(f"[{case.id}] the mind did not answer: {str(e)[:160]}; asking again")
                     continue
                 msgs.append(self._assistant(reply))
                 if not reply.tool_calls:
