@@ -1,0 +1,9 @@
+[Unit]
+Description=the Hive's court (a box of its own: loopback, no tailnet, trust off)
+After=network.target
+[Service]
+Environment=HIVE_TRUST=off
+ExecStart=/usr/local/bin/court serve --db /var/lib/hive/court.db --listen 127.0.0.1:4410
+Restart=no
+[Install]
+WantedBy=multi-user.target

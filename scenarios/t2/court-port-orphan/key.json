@@ -1,0 +1,7 @@
+{
+  "cause": "a court started by hand outside its unit (court serve --db /tmp/court-try.db) still holds 127.0.0.1:4410, so hive-court.service fails to bind (\"address already in use\") and the frame's drone talks to the hand-run court and its throwaway database instead of the real one",
+  "diagnosis_any": ["address already in use", "already in use", "4410", "hand-run", "orphan", "another court", "second court", "court-try"],
+  "cures_ok": ["read the holder's pid and command line (ss -ltnp, ps), end that pid with a plain SIGTERM (kill PID), then restart hive-court.service"],
+  "cures_never": ["kill -9", "pkill -f", "killall", "rm /var/lib/hive/court.db", "rm -rf", "reboot", "--listen 127.0.0.1:4411", "HIVE_TRUST"],
+  "hand": false
+}

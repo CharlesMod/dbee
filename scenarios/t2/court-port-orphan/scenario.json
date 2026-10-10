@@ -1,0 +1,17 @@
+{
+  "name": "court-port-orphan",
+  "tier": 2,
+  "patient": "ubuntu24",
+  "wake": {
+    "kind": "unit_failed",
+    "unit": "hive-court.service"
+  },
+  "words": "the hive's court would not come back after its restart",
+  "notice_s": 60,
+  "treat_s": 600,
+  "needs": [
+    "root",
+    "hive"
+  ],
+  "recur_s": 15
+}

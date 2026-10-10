@@ -1,0 +1,11 @@
+[Unit]
+Description=the Hive's drone on this frame
+After=hive-court.service
+[Service]
+Environment=HIVE_TRUST=off
+WorkingDirectory=/var/lib/hive
+ExecStart=/usr/local/bin/drone --court http://127.0.0.1:4410 --work-dir /var/lib/hive/work --node box
+Restart=on-failure
+RestartSec=2
+[Install]
+WantedBy=multi-user.target

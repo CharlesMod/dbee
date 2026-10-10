@@ -42,7 +42,43 @@ def runnable_here(sc: dict) -> bool:
     want = USER_PATIENTS.get(sc.get("patient", ""))
     if want:
         return sys.platform == want
+    if "hive" in sc.get("needs", []) and not hive_bin():
+        return False
     return bool(shutil.which("podman") or shutil.which("distrobox-host-exec"))
+
+
+def hive_bin() -> Path | None:
+    """Where this machine's Hive build is (its court and drone): DBEE_HIVE_BIN, the
+    PATH, or ~/hive/bin. None when there is none: a scenario that needs a Hive is skipped."""
+    for d in (os.environ.get("DBEE_HIVE_BIN", ""), str(Path(shutil.which("court") or "/nonexistent").parent),
+              str(Path.home() / "hive" / "bin")):
+        if d and all((Path(d) / b).is_file() for b in ("court", "drone")):
+            return Path(d)
+    return None
+
+
+HIVE_UNITS = Path(__file__).resolve().parents[1] / "sandbox" / "hive"
+
+
+def lay_hive(patient, say=print) -> bool:
+    """The mini-Hive in the box: the real court on loopback (trust off, no tailnet)
+    and the real drone enrolled with it as the frame `box` (sandbox/hive). Waits for
+    the enrolment the drone announces, bounded, as a fixture's boot."""
+    b = hive_bin()
+    if b is None:
+        return False
+    patient.run("mkdir -p /var/lib/hive/work")
+    for name in ("court", "drone"):
+        patient.copy_in(str(b / name), f"/usr/local/bin/{name}")
+    for unit in ("hive-court.service", "hive-drone.service"):
+        patient.copy_in(str(HIVE_UNITS / unit), f"/etc/systemd/system/{unit}")
+    r = patient.run("chmod 755 /usr/local/bin/court /usr/local/bin/drone && systemctl daemon-reload && "
+                    "systemctl enable --now hive-court.service hive-drone.service && "
+                    "for i in $(seq 60); do curl -s --max-time 2 http://127.0.0.1:4410/v1/drones | grep -q '\"node\":\"box\"' && exit 0; sleep 0.5; done; exit 1",
+                    timeout=60)
+    if r.code != 0:
+        say(f"   the mini-Hive did not come up: {r.out.strip()[-300:]}")
+    return r.code == 0
 
 
 def patient_for(sc: dict, name: str):
@@ -140,6 +176,8 @@ def run(sc: dict, mind, *, runs_dir: Path, say=None, keep: bool = False, name: s
     say(f"== {sc['name']} on {patient.name if not owned else name} with {mind.name}")
     if owned:
         patient.up(IMAGE, disk_mb=sc.get("disk_mb", 64) if "disk" in sc["name"] else 0)
+        if "hive" in sc.get("needs", []):
+            lay_hive(patient, say)
     # lay the scenario's scripts (a runbook fix travels in its own cure line: nothing to lay)
     # The scenario's own scripts (the break, the check, the undo) are piped in and never
     # written to the patient's disk: a doctor that reads the machine must not find the key.
@@ -261,6 +299,8 @@ def validate(sc: dict, *, say=print, settle_s: float = 8) -> dict:
     try:
         if owned:
             patient.up(IMAGE, disk_mb=sc.get("disk_mb", 64) if "disk" in sc["name"] else 0)
+            if "hive" in sc.get("needs", []):
+                out["hive"] = lay_hive(patient, say)
         run = steps(sc, patient)
         sh = lambda n, t=120: run(n, t)
         if owned:
