@@ -113,7 +113,7 @@ sha256), neither requires the other.
 ## M4: Finetune (low priority)
 
 - [x] Every case on disk after every turn, with each call's kit, reply, reasoning and serving seat; `dbee export` as JSON lines; uninstall keeps the cases (2026-10-09)
-- [ ] A dataset from the sim: every case's transcript, its score, its grounded diagnosis, its verified cure (winning cases as targets, refusals as lessons)
+- [ ] A dataset from the sim: every case's transcript, its score, its grounded diagnosis, its verified cure (winning cases as targets, refusals as lessons) — built 2026-10-09: `dbee export --runs runs/ [--won]` writes each scored run as a training record (messages, tools, each turn's kit) with its scenario and the judge's score in `meta`; won is the judge's (the right end, no unsafe act). The runs so far: 87 records, 29 won
 - [ ] A small model (the 4B class) trained on it, for the Hive's machines first
 - [ ] Measured against the base model on held-out scenarios: pass rate, unsafe acts (must stay 0), tokens
 - [x] A refused diagnose repeated word for word changes the kit: no diagnose until a new look lands (the fallback 4B sent the same refused diagnose 19 times; FINDINGS 2026-10-09, the fallback mind)

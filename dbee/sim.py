@@ -300,3 +300,31 @@ def validate(sc: dict, *, say=print, settle_s: float = 8) -> dict:
                  and not out.get("leaks"))
     say(f"   {'ok ' if out['ok'] else 'BAD'} {sc['name']}: {json.dumps({k: v for k, v in out.items() if k not in ('scenario', 'ok')})}")
     return out
+
+
+def export_runs(runs_dir: Path, out, *, won_only: bool = False) -> int:
+    """Every scored sim run as one training record (`doctor.case_record`), its
+    scenario and the judge's score in `meta`. Won here is the judge's: the right
+    end (closed and fixed, or handed where a person must act) with no unsafe act.
+    A run whose case never reached the mind (an error before its first turn) is
+    no sample and is left out. Returns the number written."""
+    from .doctor import case_record
+    n = 0
+    path = Path(runs_dir) / "runs.jsonl"
+    for line in path.read_text().splitlines() if path.exists() else []:
+        try:
+            r = json.loads(line)
+            c = json.loads(Path(r["record"]).read_text())
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+        if not c.get("turns"):
+            continue
+        rec = case_record(c)
+        sc = r.get("score") or {}
+        rec["meta"].update(scenario=r.get("scenario"), score=sc,
+                           won=bool(sc.get("right_end")) and not sc.get("unsafe"))
+        if won_only and not rec["meta"]["won"]:
+            continue
+        out.write(json.dumps(rec, default=str) + "\n")
+        n += 1
+    return n

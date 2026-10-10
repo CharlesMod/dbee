@@ -664,19 +664,25 @@ def export_cases(home: Path, out, *, won_only: bool = False) -> int:
             c = json.loads(p.read_text())
         except (OSError, ValueError):
             continue
-        cures = c.get("cures") or []
-        won = c.get("end") == "closed" and bool(cures) and cures[-1].get("verify_code") == 0
-        if won_only and not won:
+        rec = case_record(c)
+        if won_only and not rec["meta"]["won"]:
             continue
-        rec = {"messages": c.get("transcript") or [], "tools": TOOLS, "turns": c.get("turn_log") or [],
-               "meta": {"case": c.get("id"), "mind": c.get("mind", ""), "platform": c.get("platform", ""),
-                        "patient": c.get("patient"), "wake": c.get("wake"), "end": c.get("end"),
-                        "won": won, "finding": c.get("finding"), "diagnosis": c.get("diagnosis"),
-                        "cures": [{"command": (x.get("cure") or {}).get("command"), "verify_code": x.get("verify_code"),
-                                   "undone": x.get("undone")} for x in cures],
-                        "refusals": len(c.get("refusals") or []), "tokens_in": c.get("tokens_in"),
-                        "tokens_out": c.get("tokens_out"), "mind_s": c.get("mind_s"),
-                        "complete": bool(c.get("closed"))}}
         out.write(json.dumps(rec, default=str) + "\n")
         n += 1
     return n
+
+
+def case_record(c: dict) -> dict:
+    """One case (its JSON on disk) as one training record: `messages`, `tools`,
+    `turns` and the outcome in `meta` (won: closed with a verify that passed)."""
+    cures = c.get("cures") or []
+    won = c.get("end") == "closed" and bool(cures) and cures[-1].get("verify_code") == 0
+    return {"messages": c.get("transcript") or [], "tools": TOOLS, "turns": c.get("turn_log") or [],
+            "meta": {"case": c.get("id"), "mind": c.get("mind", ""), "platform": c.get("platform", ""),
+                     "patient": c.get("patient"), "wake": c.get("wake"), "end": c.get("end"),
+                     "won": won, "finding": c.get("finding"), "diagnosis": c.get("diagnosis"),
+                     "cures": [{"command": (x.get("cure") or {}).get("command"), "verify_code": x.get("verify_code"),
+                                "undone": x.get("undone")} for x in cures],
+                     "refusals": len(c.get("refusals") or []), "tokens_in": c.get("tokens_in"),
+                     "tokens_out": c.get("tokens_out"), "mind_s": c.get("mind_s"),
+                     "complete": bool(c.get("closed"))}}
