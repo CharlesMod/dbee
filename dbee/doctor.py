@@ -142,6 +142,15 @@ class Case:
         return "\n".join(r) + "\n"
 
 
+_NUMS = re.compile(r"\d+")
+
+
+def _gist(out: str) -> str:
+    """A verify's answer without its numbers (times, pids, sizes), to tell a changed
+    answer from the same one read again."""
+    return _NUMS.sub("#", out).strip()
+
+
 class Doctor:
     def __init__(self, patient, mind, *, home: Path, runbook: Runbook | None = None, say=print, max_tokens: int = 0):
         self.patient, self.mind, self.home, self.say = patient, mind, home, say
@@ -539,6 +548,8 @@ class Doctor:
         case.save(self.home / "cases")                      # the undo is on disk before the command runs
         self.say(f"[{case.id}] cure: {cure.command}")
         n = len(case.cures)
+        pre_code, pre_out = self._verify(cure.verify)        # the verify's answer before: progress is a change in it
+        rec.update(pre_verify_code=pre_code)
         kept = self._snapshot(case, n, self._targets(cure.command))
         rec["backed_up"] = kept
         r = self.patient.run(cure.command, timeout=120)
@@ -562,6 +573,17 @@ class Doctor:
                     + (f"its latest lines:\n{tail}\n" if tail else "")
                     + f"The cure is kept (its undo is recorded). Cures left: {self._cure_budget(case) - len(case.cures)}. "
                     "Finish the job with one more `cure`, or `hand` it over.")
+        if vcode != 0 and pre_code != 0 and _gist(vout) != _gist(pre_out) and r.code == 0:
+            # still red, but the verify answers differently than before: one fault of several
+            # is gone (a config with two errors reads the next one). Undoing it would put the
+            # first fault back, so it is kept, its undo recorded, and the mind reads what is left.
+            rec["progress"] = True
+            self.say(f"[{case.id}] verify still red but changed; the cure is kept")
+            return (f"cure ran [exit {r.code}]:\n{rec['out']}\n\nVERIFY `{cure.verify}` [exit {vcode}: still red, "
+                    f"but its answer CHANGED, so this cure fixed something and is kept (its undo is recorded)]:\n"
+                    f"before the cure:\n{pre_out[-600:]}\n\nnow:\n{vout}\n\n"
+                    f"RE-READ of what woke you [exit {woke_code}]:\n{woke_out}\n\n"
+                    f"Cures left: {self._cure_budget(case) - len(case.cures)}. Cure what the verify reads now, or `hand` it over.")
         # red: undo (nothing to run when the mind said there is none)
         self.say(f"[{case.id}] verify red ({vcode}/{woke_code}); undoing")
         if cure.irreversible:
@@ -581,9 +603,11 @@ class Doctor:
     @staticmethod
     def _cure_budget(case: "Case") -> int:
         """Two cures, and one more once a cure made progress: its own verify read green
-        while what woke the doctor still read red (the fix is half done)."""
+        while what woke the doctor still read red (the fix is half done), or its verify
+        stayed red with a changed answer (one fault of several gone); four at most."""
         half = any(c.get("verify_code") == 0 and c.get("woke_code") not in (0, None) for c in case.cures)
-        return CURE_BUDGET + (1 if half else 0)
+        moved = sum(1 for c in case.cures if c.get("progress"))
+        return min(CURE_BUDGET + (1 if half else 0) + moved, CURE_BUDGET + 2)
 
     def _verify(self, verify: str) -> tuple[int, str]:
         """Each look of the verify in turn; the first red one is the answer."""
