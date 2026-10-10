@@ -23,17 +23,7 @@ import time
 from dataclasses import dataclass, field
 from queue import Queue
 
-
-@dataclass
-class Wake:
-    kind: str                     # unit_failed | oom | health_miss | line
-    what: str                     # the unit, the url, the line
-    at: float = field(default_factory=time.time)
-    evidence: str = ""
-
-    @property
-    def key(self) -> str:
-        return f"{self.kind}:{self.what}"
+from waspdoctor.protocol import Wake  # noqa: F401  (the loop's shape; watchers make them)
 
 
 def subject(wk: Wake) -> str:

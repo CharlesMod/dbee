@@ -4,7 +4,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from dbee import config
-from dbee.doctor import Case
+from waspdoctor.doctor import Case
 from dbee.notify import notify
 
 

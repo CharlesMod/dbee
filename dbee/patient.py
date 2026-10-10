@@ -14,15 +14,8 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from waspdoctor.protocol import Result  # noqa: F401  (the loop's shape)
 
-@dataclass
-class Result:
-    code: int
-    out: str
-
-    @property
-    def tail(self) -> str:
-        return self.out[-6000:]
 
 
 # PowerShell run without a console wraps its progress and error streams in CLIXML;
@@ -40,7 +33,7 @@ class Patient:
     def platform(self):
         """What this machine is (Linux, macOS, Windows), asked once and kept."""
         if self._platform is None:
-            from .platform import detect
+            from waspdoctor.platform import detect
             self._platform = detect(self)
         return self._platform
 

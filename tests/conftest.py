@@ -1,3 +1,5 @@
+"""dbee first: it finds the loop (waspdoctor) in a Wasp checkout when it is not installed."""
+import dbee  # noqa: F401
 import os
 
 import pytest

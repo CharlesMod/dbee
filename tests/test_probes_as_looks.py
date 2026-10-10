@@ -1,8 +1,10 @@
 """The Hive's probes are the doctor's own first looks for a wake about the drone."""
 import base64
 
-from dbee import platform as P
-from dbee.doctor import Doctor
+from waspdoctor import platform as P
+from waspdoctor.doctor import Doctor
+
+from dbee import PROBES
 from dbee.patient import Result
 from dbee.watch import Wake
 
@@ -27,14 +29,14 @@ class _Patient:
 
 def test_a_wake_about_the_drone_reads_its_probes_first(tmp_path):
     pt = _Patient()
-    first = Doctor(pt, mind=None, home=tmp_path)._first_look(Wake("health_miss", "http://127.0.0.1:4411/health"))
+    first = Doctor(pt, mind=None, home=tmp_path, probes=PROBES)._first_look(Wake("health_miss", "http://127.0.0.1:4411/health"))
     assert "$ probe downtime\n[exit 1]\nRED: the drone runs as bee's own unit" in first
     assert "$ probe engine" in first and "$ probe mic" not in first
 
 
 def test_a_wake_about_anything_else_runs_no_probe(tmp_path):
     pt = _Patient()
-    first = Doctor(pt, mind=None, home=tmp_path)._first_look(Wake("unit_failed", "cron.service"))
+    first = Doctor(pt, mind=None, home=tmp_path, probes=PROBES)._first_look(Wake("unit_failed", "cron.service"))
     assert "$ probe" not in first and not any("base64 -d" in c for c in pt.ran)
 
 
@@ -42,7 +44,7 @@ def test_a_patient_the_drone_does_not_run_gets_no_probe(tmp_path):
     # a probe reads its own context: run by root beside the drone it would say "the drone runs as root"
     pt = _Patient()
     pt.runs_as_drone = False
-    first = Doctor(pt, mind=None, home=tmp_path)._first_look(Wake("health_miss", "http://127.0.0.1:4411/health"))
+    first = Doctor(pt, mind=None, home=tmp_path, probes=PROBES)._first_look(Wake("health_miss", "http://127.0.0.1:4411/health"))
     assert "$ probe" not in first
 
 
@@ -60,13 +62,13 @@ class _Script:
 
 def test_a_red_probe_offers_its_runbook_fix_and_the_fixes_own_words_run(tmp_path):
     from pathlib import Path
-    from dbee.cures import Runbook
+    from waspdoctor.cures import Runbook
     rb = Runbook.load(Path(__file__).resolve().parents[1] / "assets" / "runbook.jsonl")
     pt = _Patient()
     mind = _Script(("diagnose", {"cause": "bee does not linger", "evidence": "RED: the drone runs as bee's own unit and bee does not linger"}),
                    ("cure", {"command": "runbook:linger", "undo": "", "verify": "loginctl show-user bee -p Linger", "why": "linger"}),
                    ("hand", {"step": "x", "finding": "x"}))
-    case = Doctor(pt, mind, home=tmp_path, runbook=rb).treat(Wake("health_miss", "http://127.0.0.1:4411/health"), case_id="c-rb")
+    case = Doctor(pt, mind, home=tmp_path, runbook=rb, probes=PROBES).treat(Wake("health_miss", "http://127.0.0.1:4411/health"), case_id="c-rb")
     assert "downtime=1" in case.sig
     assert "`runbook:linger`" in mind.seen[1]                              # the brief offers it by name
     ran = case.cures[0]["cure"]
@@ -77,11 +79,11 @@ def test_a_red_probe_offers_its_runbook_fix_and_the_fixes_own_words_run(tmp_path
 
 def test_a_runbook_fix_the_signature_did_not_offer_is_refused(tmp_path):
     from pathlib import Path
-    from dbee.cures import Runbook
+    from waspdoctor.cures import Runbook
     rb = Runbook.load(Path(__file__).resolve().parents[1] / "assets" / "runbook.jsonl")
     pt = _Patient()
     mind = _Script(("diagnose", {"cause": "x", "evidence": "RED: the drone runs as bee's own unit and bee does not linger"}),
                    ("cure", {"command": "runbook:audio-server", "undo": "", "verify": "uptime", "why": "x"}),
                    ("hand", {"step": "x", "finding": "x"}))
-    case = Doctor(pt, mind, home=tmp_path, runbook=rb).treat(Wake("health_miss", "http://127.0.0.1:4411/health"), case_id="c-rb2")
+    case = Doctor(pt, mind, home=tmp_path, runbook=rb, probes=PROBES).treat(Wake("health_miss", "http://127.0.0.1:4411/health"), case_id="c-rb2")
     assert not case.cures and "not a runbook fix this case's signature offers" in case.refusals[-1]["why"]

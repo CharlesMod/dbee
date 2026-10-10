@@ -151,6 +151,10 @@ at once as the minds have seats, so a whole tier takes minutes.
 ## Quick start
 
 ```bash
+# the doctor's loop is Wasp's (waspdoctor): a Wasp checkout beside this one, or ~/wasp, is found;
+# or install it: pip install 'wasp-doctor @ git+https://github.com/CharlesMod/wasp#subdirectory=doctor'
+git clone https://github.com/CharlesMod/wasp ../wasp
+
 # install DBee on this machine with its setup window (needs Go): ./installer/stage.sh && (cd installer && CGO_ENABLED=0 go build -o dbee-setup . && ./dbee-setup)
 
 # build the patient image (systemd, journald, nginx, cron)
@@ -175,7 +179,8 @@ python3 -m dbee --mind file:runs/me/case1 sim port-taken
 
 ## Layout
 
-    dbee/        the doctor: loop, looks, cures, casebook, watchers, minds, patients
+    dbee/        the doctor: watchers, minds, patients, the sim, the CLI
+                 (its loop, looks, cures and casebook are Wasp's: waspdoctor, shared with the Hive)
     scenarios/   faults with answer keys (FORMAT.md says the shape)
     sandbox/     the patient image
     assets/      ported from the Hive's doctor: probes, pages, runbook, drills

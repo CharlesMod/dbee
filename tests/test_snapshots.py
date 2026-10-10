@@ -1,8 +1,8 @@
 """A cure's targets are copied before it runs, on any platform, where the doctor may write."""
 import os
 
-from dbee import platform as P
-from dbee.doctor import Case, Doctor
+from waspdoctor import platform as P
+from waspdoctor.doctor import Case, Doctor
 from dbee.patient import Local, Result
 
 

@@ -9,6 +9,8 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/CharlesMod/wasp/doctor"
 )
 
 //go:generate sh stage.sh
@@ -43,7 +45,7 @@ func payloadFrom(srcDir string) fs.FS {
 	return embeddedPayload()
 }
 
-// copyPayload lays dbee/ and assets/ from src under dest, without bytecode
+// copyPayload lays dbee/ and assets/ from src, and Wasp's waspdoctor/, under dest, without bytecode
 // caches. A payload with no dbee/__init__.py is refused with what to do.
 func copyPayload(src fs.FS, dest string) (files int, err error) {
 	if _, err := fs.Stat(src, "dbee/__init__.py"); err != nil {
@@ -53,40 +55,53 @@ func copyPayload(src fs.FS, dest string) (files int, err error) {
 		return 0, err
 	}
 	for _, top := range []string{"dbee", "assets"} {
-		if _, err := fs.Stat(src, top); err != nil {
-			continue
-		}
-		err := fs.WalkDir(src, top, func(p string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if d.IsDir() && d.Name() == "__pycache__" {
-				return fs.SkipDir
-			}
-			out := filepath.Join(dest, filepath.FromSlash(p))
-			if d.IsDir() {
-				return os.MkdirAll(out, 0o755)
-			}
-			if strings.HasSuffix(p, ".pyc") || !d.Type().IsRegular() {
-				return nil
-			}
-			b, err := fs.ReadFile(src, p)
-			if err != nil {
-				return err
-			}
-			mode := os.FileMode(0o644)
-			if path.Ext(p) == ".sh" {
-				mode = 0o755
-			}
-			if err := os.WriteFile(out, b, mode); err != nil {
-				return err
-			}
-			files++
-			return nil
-		})
+		n, err := layTree(src, top, dest)
+		files += n
 		if err != nil {
-			return files, fmt.Errorf("copying %s: %w", top, err)
+			return files, err
 		}
+	}
+	// the doctor's loop is Wasp's: the version this build's go.mod pins
+	n, err := layTree(doctor.Python, "waspdoctor", dest)
+	return files + n, err
+}
+
+// layTree copies top (a directory of src) under dest, without bytecode caches;
+// a top src does not hold is skipped.
+func layTree(src fs.FS, top, dest string) (files int, err error) {
+	if _, err := fs.Stat(src, top); err != nil {
+		return 0, nil
+	}
+	err = fs.WalkDir(src, top, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() && d.Name() == "__pycache__" {
+			return fs.SkipDir
+		}
+		out := filepath.Join(dest, filepath.FromSlash(p))
+		if d.IsDir() {
+			return os.MkdirAll(out, 0o755)
+		}
+		if strings.HasSuffix(p, ".pyc") || !d.Type().IsRegular() {
+			return nil
+		}
+		b, err := fs.ReadFile(src, p)
+		if err != nil {
+			return err
+		}
+		mode := os.FileMode(0o644)
+		if path.Ext(p) == ".sh" {
+			mode = 0o755
+		}
+		if err := os.WriteFile(out, b, mode); err != nil {
+			return err
+		}
+		files++
+		return nil
+	})
+	if err != nil {
+		return files, fmt.Errorf("copying %s: %w", top, err)
 	}
 	return files, nil
 }

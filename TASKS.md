@@ -104,7 +104,7 @@ sha256), neither requires the other.
 
 ## M3: Doctor Bee hooks
 
-- [ ] The Hive's doctor bee runs DBee's loop (`hive/apiary/doctor.py` calls DBee's `Doctor.treat`; one implementation, the Hive's lean law), behind its card (`ops/bees/doctor.json`)
+- [ ] The Hive's doctor bee runs the shared loop (`hive/apiary/doctor.py` calls waspdoctor's `Doctor.treat`; one implementation, the Hive's lean law), behind its card (`ops/bees/doctor.json`) — the loop shared through Wasp (the keeper, 2026-10-10: "share the loop through Wasp"): `waspdoctor` lives in Wasp (`doctor/`, Wasp 75bcf40) with its 82 tests; DBee imports it (found in a Wasp checkout, or laid beside `dbee/` by DBee Setup from the Wasp version its go.mod pins, `doctor.Python`); a product passes its probes, effort and case clock. Next: the Hive's doctor bee on it, beside its own loop until it reads no worse on the Hive's drills
 - [ ] Hooks: the Hive calls DBee on a case opened, a probe gone red, a frame lost; DBee reports through the spine (`doctor_*` events) and receipts
 - [ ] The doctor's mind is the router's to choose (Swift-27B today; the 4B as a fast first responder, escalating to Swift when it hands off)
 - [ ] The Messenger speaks for it: a hand-off reaches the keeper through Rocky

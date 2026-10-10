@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from dbee import platform as P
-from dbee.cures import Cure
+from waspdoctor import platform as P
+from waspdoctor.cures import Cure
 
 # ---------------------------------------------------------------- detection
 
@@ -210,7 +210,7 @@ def test_linux_events_still_wake_as_before():
 def test_ordinary_looks_and_verifies_pass_on_every_platform():
     # Live 2026-10-09: Linux's families were an empty table, which refused every
     # look and every verify (`systemctl` is not on the read-only list).
-    from dbee.cures import check_verify
+    from waspdoctor.cures import check_verify
     assert P.LINUX.check_look("systemctl status cron --no-pager") == ""
     assert check_verify("systemctl is-active cron && test -x /usr/sbin/cron", P.LINUX) == ""
     assert P.MACOS.check_look("launchctl print system/com.example.x") == ""

@@ -25,20 +25,9 @@ import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from waspdoctor.protocol import NoSeat, Reply  # noqa: F401  (the loop's shapes)
+
 SECRETS = Path.home() / ".config" / "dbee" / "secrets.env"
-
-
-@dataclass
-class Reply:
-    text: str
-    tool_calls: list = field(default_factory=list)   # [{"name", "arguments": dict, "id"}]
-    tokens_in: int = 0
-    tokens_out: int = 0
-    seconds: float = 0.0
-    mind: str = ""
-    raw: dict | None = None
-    reasoning: str = ""                              # a thinking model's reasoning, when the server returns it
-    served: dict = field(default_factory=dict)       # where it ran: a hive seat's node, url and slot
 
 
 def _secret(name: str) -> str:
@@ -196,11 +185,6 @@ class OpenAIMind:
                     raise
                 time.sleep(delay)
                 delay = min(delay * 2, 30.0)
-
-
-class NoSeat(RuntimeError):
-    """The Hive answered, but no seat came for the model within the call's wait: the
-    Hive is busy, not broken. A case keeps asking until its own clock runs out."""
 
 
 class HiveMind:

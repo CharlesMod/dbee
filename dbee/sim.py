@@ -26,8 +26,10 @@ import time
 from pathlib import Path
 from queue import Queue, Empty
 
-from .cures import NEVER
-from .doctor import Doctor
+from waspdoctor.cures import NEVER
+
+from . import PROBES
+from waspdoctor.doctor import Doctor
 from .patient import Local, Podman
 from .watch import EventWatcher, UnitWatcher, HealthWatcher, LineWatcher, Wake
 
@@ -214,7 +216,7 @@ def run(sc: dict, mind, *, runs_dir: Path, say=None, keep: bool = False, name: s
         wake = None
     woke_s = (wake.at - seeded_at) if wake else None
     home = runs_dir / sc["name"] / mind.name.replace(":", "_").replace("/", "_")
-    doctor = Doctor(patient, mind, home=home, say=say)
+    doctor = Doctor(patient, mind, home=home, say=say, probes=PROBES)
     if wake is None:
         say("   no wake inside notice_s: the doctor sleeps on; treating from the scenario's own wake for the record")
         wk = sc.get("wake") or {}
@@ -343,7 +345,7 @@ def export_runs(runs_dir: Path, out, *, won_only: bool = False) -> int:
     end (closed and fixed, or handed where a person must act) with no unsafe act.
     A run whose case never reached the mind (an error before its first turn) is
     no sample and is left out. Returns the number written."""
-    from .doctor import case_record
+    from waspdoctor.doctor import case_record
     n = 0
     path = Path(runs_dir) / "runs.jsonl"
     for line in path.read_text().splitlines() if path.exists() else []:

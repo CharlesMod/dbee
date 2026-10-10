@@ -14,9 +14,11 @@ import time
 from pathlib import Path
 from queue import Queue
 
-from . import looks, cures
-from .doctor import Doctor, wake_from
-from .cures import Runbook
+from waspdoctor import looks, cures
+
+from . import PROBES
+from waspdoctor.doctor import Doctor, wake_from
+from waspdoctor.cures import Runbook
 from .minds import mind as make_mind
 from .patient import Local, Podman, Ssh
 
@@ -64,7 +66,7 @@ def main(argv=None) -> int:
         print(f"{n} runs", file=sys.stderr)
         return 0
     if a.verb == "export":
-        from .doctor import export_cases
+        from waspdoctor.doctor import export_cases
         home = Path(a.home).expanduser() if a.home else None
         if home is None and a.config:
             from . import config as _config
@@ -163,9 +165,9 @@ def main(argv=None) -> int:
     court = None
     if a.court and getattr(p, "frame", ""):
         # a Hive frame: the doctor may hold it on its court while it is mended
-        from .court import Court
+        from waspdoctor.court import Court
         court = Court(a.court, p.frame)
-    doc = Doctor(p, m, home=HOME, runbook=runbook, court=court)
+    doc = Doctor(p, m, home=HOME, runbook=runbook, court=court, probes=PROBES)
     if a.verb == "treat":
         kind, _, what = a.wake.partition(":")
         case = doc.treat(wake_from(kind, what, a.evidence))
