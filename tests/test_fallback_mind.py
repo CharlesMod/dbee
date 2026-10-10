@@ -127,7 +127,7 @@ def test_a_call_too_long_for_every_seat_is_said_at_once_and_not_fallen_back_from
     def _get(url, timeout=30):
         asked.append(url)
         return 413, {"error": "too_long", "detail": "no engine's slot holds it: DESKTOP holds 24576 a slot, the call needs 30278"}
-    monkeypatch.setattr(minds, "_get", _get)
+    monkeypatch.setattr("waspdoctor.minds._get", _get)
     hm = minds.HiveMind("http://court.test", "qwen3.5-4b-iq4xs", wait_s=600)
     t0 = time.time()
     with pytest.raises(TooLong, match="24576"):

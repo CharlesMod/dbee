@@ -143,7 +143,7 @@ class _Slow(BaseHTTPRequestHandler):
 
 def test_a_slow_mind_that_keeps_talking_is_not_timed_out(monkeypatch):
     from dbee import minds
-    monkeypatch.setattr(minds, "SILENCE_S", 0.5)   # the whole answer takes > 1 s; no gap reaches 0.5
+    monkeypatch.setattr("waspdoctor.minds.SILENCE_S", 0.5)   # the whole answer takes > 1 s; no gap reaches 0.5
     srv = HTTPServer(("127.0.0.1", 0), _Slow)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     try:

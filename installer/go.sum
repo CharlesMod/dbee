@@ -6,3 +6,5 @@ github.com/CharlesMod/wasp v0.0.0-20261010212909-75bcf40207d8 h1:T+lWFuMluAFAuxU
 github.com/CharlesMod/wasp v0.0.0-20261010212909-75bcf40207d8/go.mod h1:JQGHAv2OYoi3zaceo/FmbTcOxZaN4yA2yDKMIyWHmSk=
 github.com/CharlesMod/wasp v0.0.0-20261010213151-9ce3a42b950d h1:RXv3GWOOur0hvvM1sS9Mouihyepd5iDNPkk5713Baes=
 github.com/CharlesMod/wasp v0.0.0-20261010213151-9ce3a42b950d/go.mod h1:JQGHAv2OYoi3zaceo/FmbTcOxZaN4yA2yDKMIyWHmSk=
+github.com/CharlesMod/wasp v0.0.0-20261010222146-7aee344b2d90 h1:GGhPnna9qJ3V7gnCm3MAg6/pRH76Hf6XSnJqm8H62Wo=
+github.com/CharlesMod/wasp v0.0.0-20261010222146-7aee344b2d90/go.mod h1:JQGHAv2OYoi3zaceo/FmbTcOxZaN4yA2yDKMIyWHmSk=
