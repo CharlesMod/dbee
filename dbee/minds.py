@@ -214,6 +214,16 @@ class HiveMind:
         self.name = f"hive:{model}"
         self.say = print
 
+    def seats(self) -> int | None:
+        """How many seats the Hive holds for this model now (the router's own count),
+        or None when the court does not say."""
+        try:
+            code, body = _get(f"{self.court}/v1/route/demand", timeout=10)
+        except OSError:
+            return None
+        n = (body.get("seats") or {}).get(self.model) if code == 200 else None
+        return int(n) if isinstance(n, (int, float)) else None
+
     def _grant(self, tokens: int) -> dict:
         """Ask until a seat is granted or ``wait_s`` has passed. The court holds a
         refusal only ``hold`` seconds a call (its `wait`), and says when to ask

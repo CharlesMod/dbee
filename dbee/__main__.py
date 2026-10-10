@@ -50,7 +50,7 @@ def main(argv=None) -> int:
     w = sub.add_parser("watch"); w.add_argument("service", nargs="?", default="", help="a systemd unit, a launchd label or a Windows service; empty watches the whole machine"); w.add_argument("--patient", default="local", help="local, ssh:HOST, ssh-win:HOST (PowerShell), podman:NAME"); w.add_argument("--health", default="", help="a URL that should answer"); w.add_argument("--file", default="", help="a plain log file to follow by name"); w.add_argument("--pattern", default="", help="what a critical line looks like (a regex); the platform's default otherwise"); w.add_argument("--config", default=os.environ.get("DBEE_CONFIG", ""), help="a dbee.toml: the mind, the services to watch, the doctor's home")
     pl = sub.add_parser("platform"); pl.add_argument("--patient", default="local")
     t = sub.add_parser("treat"); t.add_argument("--patient", default="local"); t.add_argument("--wake", required=True, help="kind:what, e.g. unit_failed:nginx.service"); t.add_argument("--evidence", default="")
-    s = sub.add_parser("sim"); s.add_argument("pick", nargs="?", default="all"); s.add_argument("--keep", action="store_true"); s.add_argument("--repeat", type=int, default=1, help="run each scenario N times (a pass rate, not one coin flip)"); s.add_argument("--jobs", type=int, default=int(os.environ.get("DBEE_JOBS", "0")), help="scenarios at once, each its own patient; 0 (the default) runs every picked scenario at once, and calls past the mind's free seats wait at the router"); s.add_argument("--runs", default=str(ROOT / "runs"))
+    s = sub.add_parser("sim"); s.add_argument("pick", nargs="?", default="all"); s.add_argument("--keep", action="store_true"); s.add_argument("--repeat", type=int, default=1, help="run each scenario N times (a pass rate, not one coin flip)"); s.add_argument("--jobs", type=int, default=int(os.environ.get("DBEE_JOBS", "0")), help="scenarios at once, each its own patient; 0 (the default) runs as many as the Hive holds seats for the mind (every picked one for any other mind)"); s.add_argument("--runs", default=str(ROOT / "runs"))
     c = sub.add_parser("check"); c.add_argument("cmd")
     ex = sub.add_parser("export", help="every case as JSON lines for training (messages, tools, each turn's kit, the outcome)"); ex.add_argument("--config", default=os.environ.get("DBEE_CONFIG", ""), help="a dbee.toml naming the doctor's home"); ex.add_argument("--home", default="", help="the doctor's home (cases/); the config's or ~/.dbee otherwise"); ex.add_argument("--out", default="-", help="a file; - is stdout"); ex.add_argument("--won", action="store_true", help="only cases closed with a verify that passed"); ex.add_argument("--runs", default="", help="a sim's runs/ instead: each scored run, the judge's score in meta")
     v = sub.add_parser("validate"); v.add_argument("pick", nargs="?", default="all")
@@ -126,6 +126,11 @@ def main(argv=None) -> int:
         if not picked:
             print("no scenario matches", a.pick); return 2
         jobs = a.jobs if a.jobs > 0 else len(picked)
+        seats = getattr(m, "seats", lambda: None)() if a.jobs <= 0 else None
+        if seats and jobs > seats:
+            # a case past the seats waits at the router and slows every turn: width is the seats
+            print(f"{seats} seats for {m.name} now; running {seats} at once")
+            jobs = seats
         from .patient import patient_room
         room = patient_room()
         if room is not None and jobs > room:

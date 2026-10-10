@@ -191,3 +191,25 @@ def test_a_hive_call_lands_on_the_slot_its_grant_named():
         srv.shutdown()
     assert _Court.chats[0]["id_slot"] == 1          # never a slot llama-server picks by LRU (another caller's)
     assert r.served == {"node": "n1", "url": f"http://127.0.0.1:{srv.server_port}", "slot": 1}
+
+
+class _Demand(BaseHTTPRequestHandler):
+    def do_GET(self):
+        data = json.dumps({"demand": {}, "seats": {"qwen3.5-4b-iq4xs": 12, "gemma-4-26b-a4b-iq3s": 5}}).encode()
+        self.send_response(200); self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
+
+    def log_message(self, *a):
+        pass
+
+
+def test_a_hive_mind_says_how_many_seats_the_hive_holds_for_it():
+    # the sim's width: 31 cases on 12 seats made every turn wait at the router
+    from dbee.minds import HiveMind
+    srv = HTTPServer(("127.0.0.1", 0), _Demand)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        assert HiveMind(f"http://127.0.0.1:{srv.server_port}", "qwen3.5-4b-iq4xs").seats() == 12
+        assert HiveMind(f"http://127.0.0.1:{srv.server_port}", "unseated-model").seats() is None
+    finally:
+        srv.shutdown()
+    assert HiveMind("http://127.0.0.1:1", "qwen3.5-4b-iq4xs").seats() is None      # a court that does not answer
