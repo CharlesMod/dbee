@@ -485,6 +485,8 @@ while ($true) {
   $e = Wait-Event
   $r = $e.SourceEventArgs.EventRecord
   if ($r) {
+    # a service installed after the watch began has a display name only now
+    if ($svc -and $dn -eq $svc) { $dn = try { (Get-Service -Name $svc -ErrorAction Stop).DisplayName } catch { $svc } }
     $m = try { $r.FormatDescription() } catch { '' }
     [pscustomobject]@{ display = $dn; log = $r.LogName; provider = $r.ProviderName; id = $r.Id; level = $r.Level; msg = $m; props = @($r.Properties | ForEach-Object { "$($_.Value)" }) } | ConvertTo-Json -Compress
   }
@@ -525,5 +527,6 @@ MACOS = _MacOS(name="macos", shell="sh",
 WINDOWS = _Windows(name="windows", shell="powershell",
                    critical=r"(?i)\b(fatal|critical|crash(ed)?|terminated unexpectedly|access is denied|"
                             r"not enough (disk )?space|out of memory|faulting application|unhandled exception|"
-                            r"certificate .*expired|only one usage of each socket address)\b")
+                            r"certificate .*expired|only one usage of each socket address|"
+                            r"service cannot be started|access to the path .{1,260} is denied)\b")
 ALL = {"linux": LINUX, "macos": MACOS, "windows": WINDOWS}

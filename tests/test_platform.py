@@ -298,3 +298,12 @@ def test_an_scm_event_naming_the_service_by_its_display_name_wakes():
     other = json.loads(line); other["msg"] = other["msg"].replace("DBee e2e patient", "Print Spooler"); other["props"] = ["Print Spooler"]
     assert P.WINDOWS.parse_event(json.dumps(other), "DBeeE2EPatient") is None
     assert "(Get-Service -Name $svc" in P.WINDOWS.watch_cmd("DBeeE2EPatient")
+
+
+def test_a_dotnet_service_that_cannot_start_wakes():
+    # seen live on Windows: a .NET service whose OnStart throws leaves no SCM error (it
+    # stops with exit 0); its only word is this Application-log error under its own name
+    msg = ("Service cannot be started. System.UnauthorizedAccessException: Access to the path "
+           "'C:\\ProgramData\\DBeePatient\\patient.conf' is denied.\n   at PatientWeb.OnStart(String[] args)")
+    ev = P.win_event(_evt("DBeePatientWeb", 0, msg, level=2, log="Application"), "DBeePatientWeb", P.WINDOWS.critical)
+    assert ev and ev["kind"] == "line" and "patient.conf" in ev["evidence"]
