@@ -140,17 +140,12 @@ def run(sc: dict, mind, *, runs_dir: Path, say=None, keep: bool = False, name: s
     say(f"== {sc['name']} on {patient.name if not owned else name} with {mind.name}")
     if owned:
         patient.up(IMAGE, disk_mb=sc.get("disk_mb", 64) if "disk" in sc["name"] else 0)
-    # lay the scenario's scripts and any runbook fixes
+    # lay the scenario's scripts (a runbook fix travels in its own cure line: nothing to lay)
     # The scenario's own scripts (the break, the check, the undo) are piped in and never
     # written to the patient's disk: a doctor that reads the machine must not find the key.
     sh = steps(sc, patient)
     if owned:
-        patient.run("mkdir -p /var/lib/dbee/fixes")
-        fixes = ROOT / "assets" / "fixes"
-        if fixes.exists():
-            for f in fixes.iterdir():
-                patient.copy_in(str(f), f"/var/lib/dbee/fixes/{f.name}")
-        patient.run("chmod +x /var/lib/dbee/fixes/* 2>/dev/null; touch -d '2 days ago' /var/lib/dbee/fixes/* 2>/dev/null; systemctl start patient-web.service; sleep 2")
+        patient.run("systemctl start patient-web.service; sleep 2")
         # a machine that has been up a while: what its boot touched is old news, so the
         # doctor's "what changed" shows the fault, not the container starting
         patient.run("find /etc /opt /usr/local /srv -xdev -newermt '-10 minutes' -exec touch -h -d '3 hours ago' {} + 2>/dev/null; true")

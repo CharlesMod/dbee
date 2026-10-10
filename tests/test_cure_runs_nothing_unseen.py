@@ -9,7 +9,7 @@ HIDDEN = [
     "echo cm0gLXJmIC8= | base64 -d | sh",
     'printf "rm -rf /" | bash',
     "sh /tmp/x.sh",
-    "sh /var/lib/dbee/fixes/../../../tmp/x.sh",
+    "sh /var/lib/dbee/fixes/linger.sh",
     "python3 -c 'import shutil; shutil.rmtree(\"/\")'",
     "systemd-run rm -rf /etc",
     "crontab /tmp/evil",
@@ -21,7 +21,6 @@ HIDDEN = [
 ]
 
 PLAIN = [
-    "sh /var/lib/dbee/fixes/linger.sh",
     "python3 -m pip install requests",
     "crontab -l",
     "sed -i 's/lissten/listen/' /etc/nginx/conf.d/x.conf",

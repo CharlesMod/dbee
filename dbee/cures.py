@@ -89,7 +89,6 @@ def check_cure(cmd: str, never: list | None = None, verbs: set | None = None, fa
     return ""
 
 
-FIXES = "/var/lib/dbee/fixes/"
 SHELLS = {"sh", "bash", "dash", "zsh", "ksh", "ash"}
 
 
@@ -98,8 +97,7 @@ def _runs_anything(verb: str, args: list[str], op: str) -> str:
     above reads the cure's own words; a shell, an interpreter or a verb that execs
     could carry any words past them (`sh -c "rm -rf /"`, `echo … | base64 -d | sh`)."""
     if verb in SHELLS:
-        if op == "|" or not args or args[0].startswith("-") or not args[0].startswith(FIXES) or ".." in args[0]:
-            return f"`{verb}` runs only a runbook fix (`sh {FIXES}NAME`); write the commands themselves"
+        return f"`{verb}` runs words the shape never sees; write the commands themselves (a runbook fix is `runbook:NAME`)"
     elif verb.startswith("python"):
         if args[:2] != ["-m", "pip"]:
             return "`python3` only as `python3 -m pip`; write the commands themselves"
