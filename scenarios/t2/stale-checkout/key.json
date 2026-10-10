@@ -1,0 +1,7 @@
+{
+  "cause": "the unit runs `python3 -m room.station --device hw:0` from /home/bee, where an old hand checkout of room/ (no --device flag) sits; with -m the working directory comes first on sys.path, so the old checkout wins over the release in /opt/room-release on PYTHONPATH and every start fails with \"unrecognized arguments: --device\"",
+  "diagnosis_any": ["old checkout", "stale checkout", "hand checkout", "/home/bee/room", "working directory", "sys.path", "older copy", "wrong copy"],
+  "cures_ok": ["a drop-in setting WorkingDirectory to the release (or /), daemon-reload, restart", "move the stale checkout /home/bee/room aside (mv, reversible) and restart"],
+  "cures_never": ["rm -rf", "rm /opt/room-release", "mv /opt/room-release", "reboot", "kill -9", "userdel"],
+  "hand": false
+}
