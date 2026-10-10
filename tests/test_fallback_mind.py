@@ -75,9 +75,9 @@ def test_no_hive_mind_falls_back_to_the_bundled_engine_cpu_only(engine, err):
     assert "CUDA=" in argv                                         # and no card visible to it at all
     # the rest of the case stays on the engine: the Hive is not asked again mid-case
     m.chat([{"role": "user", "content": "y"}], max_tokens=8)
-    assert m.primary.calls == 1
+    assert m.primary.calls == 1 and m.name == "local:qwen3.5-4b-iq4xs"   # the case records the mind that answered
     m.rest()
-    assert not e.running()                                        # stopped when the case ended
+    assert not e.running() and m.name == m.primary.name           # stopped when the case ended
 
 
 def test_a_hive_that_answers_never_starts_the_engine(engine):

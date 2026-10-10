@@ -456,10 +456,11 @@ class FallbackMind:
                      f"{self.local.label}, on the CPU")
             self.local.start()
             self.fell_back = True
+            self.name = f"local:{self.local.label}"
         return self.local.mind().chat(messages, tools, **kw)
 
     def rest(self) -> None:
-        self.fell_back = False
+        self.fell_back, self.name = False, self.primary.name
         self.local.stop()
 
 

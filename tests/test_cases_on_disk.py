@@ -92,18 +92,27 @@ def test_no_ungrounded_diagnosis_is_recorded_and_the_case_works_until_its_clock(
     monkeypatch.setenv("DBEE_CASE_HOURS", str(1.5 / 3600))           # a 1.5 s case
     doc = Doctor(_Patient(), _Script(UNREAD, pause=0.05), home=tmp_path)
     case = doc.treat(Wake("unit_failed", "cron.service", evidence="status=203/EXEC"), case_id="c-2")
-    assert case.diagnosis is None and case.end == "handed" and case.ungrounded > 3   # refused every time, never let through
+    assert case.diagnosis is None and case.end == "handed" and len(case.refusals) > 3   # refused every time, never let through
     assert "ran" in case.hand["step"] and "no diagnosis grounded" in case.finding
 
 
 def test_a_refused_diagnosis_gives_the_looks_back_and_a_grounded_one_is_recorded(tmp_path):
     from dbee.doctor import LOOK_BUDGET
     looks = [("look", {"cmd": f"uptime{' ' * i}"}) for i in range(LOOK_BUDGET)]
-    mind = _Script(*looks, UNREAD, READ, HAND)
+    mind = _Script(*looks, UNREAD, ("look", {"cmd": "ls -lL /usr/sbin/cron"}), READ, HAND)
     case = Doctor(_Patient(), mind, home=tmp_path).treat(Wake("unit_failed", "cron.service"), case_id="c-3")
     assert mind.kits[LOOK_BUDGET] == ["diagnose", "hand"]                  # looks spent: decide
-    assert "look" in mind.kits[LOOK_BUDGET + 1]                            # refused: looks given back
+    assert mind.kits[LOOK_BUDGET + 1] == ["look", "hand"]                  # refused: looks given back, diagnose after one
     assert case.diagnosis and case.diagnosis["evidence"].startswith("-rw-r--r--") and case.ungrounded == 1
+
+
+def test_a_refused_diagnosis_is_not_offered_again_until_a_look_lands(tmp_path):
+    # seen live: a 4B on the CPU sent one refused diagnosis 19 times, reading nothing between
+    mind = _Script(UNREAD, UNREAD, ("look", {"cmd": "ls -lL /usr/sbin/cron"}), READ, HAND)
+    case = Doctor(_Patient(), mind, home=tmp_path).treat(Wake("unit_failed", "cron.service"), case_id="c-4")
+    assert mind.kits[1] == ["look", "hand"] and mind.kits[2] == ["look", "hand"]    # no diagnose in the kit
+    assert case.ungrounded == 1 and case.refusals[1]["why"] == "no look since the last refusal"
+    assert "diagnose" in mind.kits[3] and case.diagnosis["evidence"].startswith("-rw-r--r--")
 
 
 def test_every_case_has_a_report_a_person_reads_in_a_minute(tmp_path):

@@ -84,6 +84,7 @@ class Case:
     close_said: dict | None = None
     decide_now: bool = False
     ungrounded: int = 0                                  # diagnoses refused for evidence never read
+    need_look: bool = False                              # a diagnosis was refused: no other until a look lands
     look_limit: int = LOOK_BUDGET                        # looks before the mind is asked to decide
     snapshots: list = field(default_factory=list)        # files backed up before a cure wrote them
     transcript: list = field(default_factory=list)       # the messages, as the mind saw them
@@ -200,6 +201,10 @@ class Doctor:
                                    "Decide now from what you have read: " +
                                    ("`diagnose` the mechanism, or `hand` it over." if phase == "triage"
                                     else "`cure`, `close` if the last verify was green, or `hand` it over."))
+                    elif name == "diagnose" and phase == "triage" and case.need_look and not case.decide_now:
+                        # not in the kit: a diagnosis again with nothing new read is the same refusal
+                        out = "refused: `diagnose` comes back once a new look has landed; `look` for the line, or `hand` it over."
+                        case.refusals.append({"kind": "diagnose", "what": a.get("evidence", "")[:300], "why": "no look since the last refusal"})
                     elif name == "diagnose":
                         case.decide_now = False
                         if phase == "triage" and self.effort.get("diagnose") and self.effort.get("diagnose") != self.effort.get("triage"):
@@ -209,6 +214,7 @@ class Doctor:
                         if not self._grounded(a.get("evidence", ""), first, case):
                             # never recorded: a diagnosis rests on a line the doctor read, or there is none
                             case.ungrounded += 1
+                            case.need_look = True
                             case.refusals.append({"kind": "diagnose", "what": a.get("evidence", "")[:300],
                                                   "why": "evidence not in anything read"})
                             # looks back, to find the line the mechanism shows
@@ -267,6 +273,8 @@ class Doctor:
     def _ask(self, case: Case, msgs, phase):
         if phase == "triage" and (len(case.looks) >= case.look_limit or case.decide_now):
             tools = [t for t in TOOLS if t["function"]["name"] in ("diagnose", "hand")]
+        elif phase == "triage" and case.need_look:
+            tools = [t for t in TOOLS if t["function"]["name"] in ("look", "hand")]
         elif phase == "treat" and case.decide_now:
             tools = [t for t in TOOLS if t["function"]["name"] in ("cure", "close", "hand")]
         else:
@@ -274,6 +282,7 @@ class Doctor:
         effort = self.effort.get(phase, "")
         r = self.mind.chat(msgs, tools=tools, max_tokens=self.max_tokens, effort=effort)
         case.turns += 1
+        case.mind = getattr(self.mind, "name", case.mind)      # the mind that answered (a fallback changes it)
         calls = ",".join(tc["name"] for tc in r.tool_calls) or "words"
         self.say(f"[{case.id}] turn {case.turns} ({phase}{', ' + effort if effort else ''}): {calls} "
                  f"in {r.seconds:.1f}s, {r.tokens_in}+{r.tokens_out} tokens")
@@ -490,6 +499,8 @@ class Doctor:
             return None
         t0 = time.time()
         code, out = looks.look(self.patient, cmd)
+        if code != 126:
+            case.need_look = False
         case.looks.append({"cmd": cmd, "code": code, "out": out[-2000:], "s": round(time.time() - t0, 2)})
         if code == 126:
             case.refusals.append({"kind": "look", "what": cmd, "why": out})
