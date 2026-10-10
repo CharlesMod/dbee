@@ -88,6 +88,7 @@ class Case:
     hand: dict | None = None
     close_said: dict | None = None
     decide_now: bool = False
+    close_blocked: bool = False                          # a close was refused: no other until a look or cure lands
     ungrounded: int = 0                                  # diagnoses refused for evidence never read
     need_look: bool = False                              # a diagnosis was refused: no other until a look lands
     look_limit: int = LOOK_BUDGET                        # looks before the mind is asked to decide
@@ -266,11 +267,17 @@ class Doctor:
                             out = "refused: two cures have run; `hand` the case over or `close` it if the last verify was green."
                         else:
                             out = self._do_cure(case, a, wake)
+                            if not out.startswith("refused"):
+                                case.close_blocked = False
                     elif name == "hand":
                         case.hand = {"step": a.get("step", ""), "finding": a.get("finding", "")}
                         case.end, case.finding = "handed", a.get("finding", "")
                         self.say(f"[{case.id}] handed: {case.hand['step'][:200]}")
                         break
+                    elif name == "close" and case.close_blocked:
+                        # not in the kit: a close again with nothing new done is the same refusal
+                        out = "refused: `close` comes back once a look or a cure lands; nothing has changed since the last refusal."
+                        case.refusals.append({"kind": "close", "what": "", "why": "nothing landed since the last refusal"})
                     elif name == "close":
                         case.close_said = {"cause": a.get("cause", ""), "cause_removed": a.get("cause_removed", ""),
                                            "finding": a.get("finding", "")}
@@ -280,6 +287,7 @@ class Doctor:
                             self.say(f"[{case.id}] closed: {case.finding[:200]}")
                             break
                         out = f"refused: {why}"
+                        case.close_blocked = True
                         case.refusals.append({"kind": "close", "what": "", "why": why})
                     else:
                         out = f"refused: no tool named {name}"
@@ -308,6 +316,8 @@ class Doctor:
             tools = [t for t in TOOLS if t["function"]["name"] in ("cure", "close", "hand")]
         else:
             tools = TOOLS if phase == "treat" else [t for t in TOOLS if t["function"]["name"] in ("look", "diagnose", "hand")]
+        if case.close_blocked:
+            tools = [t for t in tools if t["function"]["name"] != "close"]
         effort = self.effort.get(phase, "")
         r = self.mind.chat(msgs, tools=tools, max_tokens=self.max_tokens, effort=effort)
         case.turns += 1
@@ -574,6 +584,7 @@ class Doctor:
         code, out = looks.look(self.patient, cmd)
         if code != 126:
             case.need_look = False
+            case.close_blocked = False
         case.looks.append({"cmd": cmd, "code": code, "out": out[-2000:], "s": round(time.time() - t0, 2)})
         if code == 126:
             case.refusals.append({"kind": "look", "what": cmd, "why": out})
@@ -733,12 +744,14 @@ class Doctor:
                            + (" (one more cure may run)" if len(case.cures) < self._cure_budget(case) else "")
                            + ", or `hand` it over naming the step.")
         if said not in ("yes", "unsure"):
-            return False, "say whether the cause is removed: cause_removed is yes, no or unsure"
+            return False, (f"cause_removed takes one word, yes, no or unsure; you sent {str(said)[:120]!r}. "
+                           "`close` comes back once a look or a cure lands.")
         code, out = self._reread(wake)
         if code != 0:
             return False, f"what woke you still reads red: {out.strip()[:200]}"
         if case.cures and case.cures[-1].get("verify_code") != 0:
-            return False, "the last cure's verify read red"
+            return False, ("the last cure's verify read red, so it was undone. Look at what holds now, "
+                           "then `cure` again with a verify that reads 0 once the fault is gone, or `hand` it over")
         if not case.cures:
             # closing without a cure is allowed only if the fault cleared itself and the re-read is green
             return True, ""

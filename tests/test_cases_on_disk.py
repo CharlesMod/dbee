@@ -232,3 +232,18 @@ def test_a_change_sent_as_a_look_after_the_diagnosis_is_pointed_at_cure(tmp_path
     case = Doctor(_Patient(), mind, home=tmp_path).treat(Wake("unit_failed", "cron.service"), case_id="c-wl")
     said = [m["content"] for m in case.transcript if m.get("role") == "tool"]
     assert any("call `cure` with it" in t for t in said)
+
+
+BADCLOSE = ("close", {"cause": "tmpfs full", "cause_removed": "no: the service fills it again", "finding": "freed"})
+LOOKED = ("look", {"cmd": "ls -lL /usr/sbin/cron"})
+
+
+def test_a_refused_close_leaves_the_kit_until_a_look_lands(tmp_path):
+    # seen live: the 26B sent cause_removed "no: …" past the enum 178 times, close always in its kit
+    mind = _Script(LOOKED, READ, BADCLOSE, BADCLOSE, ("look", {"cmd": "uptime"}), HAND)
+    case = Doctor(_Patient(), mind, home=tmp_path).treat(Wake("unit_failed", "cron.service"), case_id="c-12")
+    assert "close" in mind.kits[2] and "close" not in mind.kits[3] and "close" not in mind.kits[4]
+    assert "close" in mind.kits[5]                                            # a look landed: it may close again
+    assert "no: the service fills it again" in case.refusals[0]["why"]       # what it sent, shown back
+    assert case.refusals[1]["why"] == "nothing landed since the last refusal"
+    assert case.end == "handed"
