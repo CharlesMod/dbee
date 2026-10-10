@@ -28,6 +28,8 @@ from .minds import NoSeat
 from .casebook import Casebook
 from .watch import Wake
 
+PROBES = Path(__file__).resolve().parents[1] / "assets" / "probes.jsonl"   # the Hive's probes, as first looks
+
 LOOK_BUDGET = 14
 WRITES = re.compile(r"writes|redirection")
 CURE_BUDGET = 2
@@ -375,7 +377,37 @@ class Doctor:
         for c in cmds:
             code, out = looks.look(self.patient, c, timeout=30, trusted=True)
             parts.append(f"$ {c}\n[exit {code}]\n{out}")
+        for name, cmd in self._probes(wake):
+            r = self.patient.run(cmd, timeout=60)
+            parts.append(f"$ probe {name}\n[exit {r.code}]\n{looks.cut(r.out)}")
         return "\n\n".join(parts)
+
+    def _probes(self, wake: Wake) -> list[tuple[str, str]]:
+        """The Hive's own probes (`assets/probes.jsonl`, read-only, verdict first) that
+        read the frame a wake is about: the drone's and its engines' for a wake about
+        the drone, the ears' for a wake about a room. Each runs as one line of sh, its
+        script carried in the line, so any patient that runs sh runs it."""
+        if self.patient.platform.shell != "sh":
+            return []
+        what = f"{wake.what} {wake.evidence}".lower()
+        if re.search(r"hive-drone|:4411\b|\bdrone\b", what):
+            pages = {"drone", "engines", "queen"}
+        elif re.search(r"station|\bears\b|\bmic\b", what):
+            pages = {"ears"}
+        else:
+            return []
+        out = []
+        for line in PROBES.read_text().splitlines() if PROBES.exists() else []:
+            p = json.loads(line)
+            if p.get("where") not in ("frame", "all") or p.get("page") not in pages:
+                continue
+            if p.get("script"):
+                import base64
+                b64 = base64.b64encode((PROBES.parent / "probes" / p["script"]).read_bytes()).decode()
+                out.append((p["name"], f"echo {b64} | base64 -d | sh"))
+            elif p.get("run"):
+                out.append((p["name"], p["run"]))
+        return out
 
     @staticmethod
     def _service(wake: Wake) -> str:
