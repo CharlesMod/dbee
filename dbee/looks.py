@@ -31,8 +31,37 @@ FAMILIES: dict[str, tuple[str, ...]] = {
     "ulimit": (), "lscpu": (), "vmstat": (), "iostat": (), "top": ("-d",), "numfmt": (), "sort": (), "uniq": (), "cut": (), "awk": (), "sed": ("-i", "--in-place", "w", "e"),
     "test": (), "true": (), "echo": (), "printf": (), "stat": (), "md5sum": (), "sha256sum": (), "openssl": ("req", "genrsa", "genpkey", "rand", "-out", "-keyout", "ca", "enc", "dgst", "-sign"),
     "timedatectl": ("set-time", "set-timezone", "set-ntp", "set-local-rtc"), "hostnamectl": ("set-hostname", "set-icon-name", "set-chassis"),
-    "nslookup": (), "dig": (), "host": (), "netstat": (), "cmp": (), "diff": ("-o", "--output"), "strings": (), "od": (), "xxd": ("-r",), "hexdump": (), "cksum": (), "readelf": (), "nm": (), "sha1sum": (), "base64": (), "[": (), "whoami": (), "groups": (), "w": (), "who": (), "getfacl": (), "lsattr": (), "namei": (), "dpkg-query": (), "apt-cache": (), "systemd-analyze": (), "less": (), "column": (), "tr": (), "jq": (), "resolvectl": ("flush-caches", "reset-statistics", "revert", "dns", "domain"),
+    "hive": (), "nslookup": (), "dig": (), "host": (), "netstat": (), "cmp": (), "diff": ("-o", "--output"), "strings": (), "od": (), "xxd": ("-r",), "hexdump": (), "cksum": (), "readelf": (), "nm": (), "sha1sum": (), "base64": (), "[": (), "whoami": (), "groups": (), "w": (), "who": (), "getfacl": (), "lsattr": (), "namei": (), "dpkg-query": (), "apt-cache": (), "systemd-analyze": (), "less": (), "column": (), "tr": (), "jq": (), "resolvectl": ("flush-caches", "reset-statistics", "revert", "dns", "domain"),
 }
+# the Hive's own reads: `hive VERB [SUB]` where SUB (the first word that is not a
+# flag) is one of these; "*" takes any, "" is the verb alone. Anything else (a
+# write, a job launched, a stream that never ends) is not a look.
+HIVE_READS: dict[str, set[str]] = {
+    "": {""}, "journal": {"*"}, "fleet": {"*"}, "frames": {"*"}, "logs": {"*"}, "jobs": {""},
+    "doctor": {"", "case", "pages"}, "needs": {"", "show", "plan"}, "roles": {""}, "scout": {""},
+    "marks": {"*"}, "status": {""}, "succession": {""}, "bees": {""}, "brain": {""}, "core": {""},
+    "queen": {"", "show"}, "deploy": {"status"}, "job": {"status", "logs"}, "todo": {"list", "arc"},
+    "snapshot": {"list"}, "ray": {"status", "logs"}, "engines": {"list"}, "material": {"list"},
+    "measured": {"list", "show"}, "trust": {"show", "check"}, "pin": {"status"}, "settings": {"", "path"},
+}
+HIVE_STREAMS = {"--follow", "-f"}
+
+
+def hive_read(args: list[str]) -> str:
+    """Why `hive ARGS` is not a look, or '' when it only reads."""
+    words = [a for a in args if not a.startswith("-")]
+    verb = words[0] if words else ""
+    sub = words[1] if len(words) > 1 else ""
+    allowed = HIVE_READS.get(verb)
+    if allowed is None:
+        return f"`hive {verb}` is not one of the Hive's reads; read it with hive journal, fleet, doctor case, needs show, job logs"
+    if "*" not in allowed and sub not in allowed:
+        return f"`hive {verb} {sub}` acts; a look only reads (" + ", ".join(f"hive {verb} {x}".rstrip() for x in sorted(allowed)) + ")"
+    if any(a in HIVE_STREAMS for a in args):
+        return "a look ends; `--follow` never does"
+    return ""
+
+
 FILTERS = {"grep", "tail", "head", "wc", "sort", "uniq", "cut", "awk", "sed", "tr", "jq", "numfmt", "column"}
 SECRET = re.compile(r"(?i)(api[_-]?key|token|password|(?<![/\w])passwd(?!\b/)|secret|authkey|private[_-]?key|\.ssh/|id_(rsa|ed25519|ecdsa|dsa)\b|/etc/shadow|\.pem\b|\.key\b|tailscaled\.state|\.gnupg/|\.netrc|credentials)")
 
@@ -100,6 +129,8 @@ def check(cmd: str, families: dict | None = None) -> str:
         if verb not in fams:
             return f"`{verb}` is not on the doctor's read-only list; read it another way"
         args = toks[1:]
+        if verb == "hive" and (why := hive_read(args)):
+            return why
         for bad in fams[verb]:
             for i, t in enumerate(args):
                 if t != bad:
