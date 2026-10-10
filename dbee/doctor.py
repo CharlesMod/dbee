@@ -23,7 +23,7 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 
 from . import looks
-from .cures import Cure, Runbook, check_cure
+from .cures import Cure, Runbook, check_cure, check_verify
 from .minds import NoSeat
 from .casebook import Casebook
 from .watch import Wake
@@ -79,6 +79,7 @@ class Case:
     opened: float = field(default_factory=time.time)
     looks: list[dict] = field(default_factory=list)      # {cmd, code, out, s}
     refusals: list[dict] = field(default_factory=list)   # {kind, what, why}
+    sig: list[str] = field(default_factory=list)          # the wake and every red probe: what the runbook and casebook match
     diagnosis: dict | None = None
     cures: list[dict] = field(default_factory=list)      # {cure, ran, code, out, verify_code, verify_out, undone}
     end: str = ""                                        # closed | handed | stalled | budget | error
@@ -177,8 +178,10 @@ class Doctor:
             self.casebook.record(case=prior.id, patient=prior.patient, sig=[f"{wake.kind}={wake.what}"],
                                  cause=(prior.diagnosis or {}).get("cause", ""), cure=prior.cures[-1]["cure"],
                                  won=False, finding="the fault came back after the close")
+        self._probe_red = []
         first = self._first_look(wake)
-        sig = [f"{wake.kind}={wake.what}"]
+        sig = [f"{wake.kind}={wake.what}"] + self._probe_red      # a red probe is part of the fault's signature
+        case.sig = sig
         precedents = self.casebook.precedents(sig)
         msgs = [{"role": "system", "content": SYSTEM},
                 {"role": "user", "content": self._opening(wake, first, precedents, prior)}]
@@ -380,6 +383,8 @@ class Doctor:
         for name, cmd in self._probes(wake):
             r = self.patient.run(cmd, timeout=60)
             parts.append(f"$ probe {name}\n[exit {r.code}]\n{looks.cut(r.out)}")
+            if r.code != 0:
+                self._probe_red = getattr(self, "_probe_red", []) + [f"{name}={r.code}"]
         return "\n\n".join(parts)
 
     def _probes(self, wake: Wake) -> list[tuple[str, str]]:
@@ -551,7 +556,7 @@ class Doctor:
         if rb:
             s.append("Runbook cures whose signature matches here (prefer one of these if it fits the mechanism):")
             for c in rb:
-                s.append(f"- {c.name}: {c.why} — `{c.command}` undo `{c.undo}`")
+                s.append(f"- {c.name}: {c.why} — call `cure` with command `{c.command}` (the runbook's own script and undo run; you write the verify)")
         return "\n".join(s)
 
     def _do_look(self, case: Case, cmd: str, seen: dict) -> str | None:
@@ -578,10 +583,21 @@ class Doctor:
     def _do_cure(self, case: Case, a: dict, wake: Wake) -> str:
         cure = Cure(name=f"written:{abs(hash(a.get('command', ''))) % 10**8:08d}", command=a.get("command", ""),
                     undo=a.get("undo", ""), verify=a.get("verify", ""), why=a.get("why", ""))
-        for rb in self.runbook.matching([f"{wake.kind}={wake.what}"]):
-            if rb.command.strip() == cure.command.strip():
-                cure.name, cure.source = rb.name, "runbook"
-        problems = cure.problems(self.patient.platform)
+        offered = {rb.name: rb for rb in self.runbook.matching(case.sig)}
+        m = re.match(r"^\s*runbook:([\w.-]+)\s*$", cure.command)
+        if m and m.group(1) in offered and (lines := self.runbook.expand(m.group(1))):
+            # a runbook fix the case's signature offered: its own words run, the mind's verify checks it
+            cure.name, cure.source = m.group(1), "runbook"
+            cure.command, cure.undo = lines
+            v = check_verify(cure.verify, self.patient.platform) if cure.verify.strip() else "a cure names how it will be checked"
+            problems = [f"verify must be read-only looks (joined by && at most): {v}"] if v else []
+        elif m:
+            problems = [f"`runbook:{m.group(1)}` is not a runbook fix this case's signature offers ({', '.join(offered) or 'none'})"]
+        else:
+            for rb in offered.values():
+                if rb.command.strip() == cure.command.strip():
+                    cure.name, cure.source = rb.name, "runbook"
+            problems = cure.problems(self.patient.platform)
         if problems:
             case.refusals.append({"kind": "cure", "what": cure.command, "why": "; ".join(problems)})
             same = sum(1 for r in case.refusals if r["kind"] == "cure" and r["what"] == cure.command)

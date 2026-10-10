@@ -44,3 +44,44 @@ def test_a_patient_the_drone_does_not_run_gets_no_probe(tmp_path):
     pt.runs_as_drone = False
     first = Doctor(pt, mind=None, home=tmp_path)._first_look(Wake("health_miss", "http://127.0.0.1:4411/health"))
     assert "$ probe" not in first
+
+
+class _Script:
+    def __init__(self, *steps):
+        self.steps, self.n, self.seen = list(steps), 0, []
+
+    def chat(self, msgs, tools=None, max_tokens=0, effort=""):
+        from dbee.minds import Reply
+        self.seen.append(msgs[-1].get("content", ""))
+        name, args = self.steps[min(self.n, len(self.steps) - 1)]
+        self.n += 1
+        return Reply(text="", tool_calls=[{"id": f"t{self.n}", "name": name, "arguments": args}])
+
+
+def test_a_red_probe_offers_its_runbook_fix_and_the_fixes_own_words_run(tmp_path):
+    from pathlib import Path
+    from dbee.cures import Runbook
+    rb = Runbook.load(Path(__file__).resolve().parents[1] / "assets" / "runbook.jsonl")
+    pt = _Patient()
+    mind = _Script(("diagnose", {"cause": "bee does not linger", "evidence": "RED: the drone runs as bee's own unit and bee does not linger"}),
+                   ("cure", {"command": "runbook:linger", "undo": "", "verify": "loginctl show-user bee -p Linger", "why": "linger"}),
+                   ("hand", {"step": "x", "finding": "x"}))
+    case = Doctor(pt, mind, home=tmp_path, runbook=rb).treat(Wake("health_miss", "http://127.0.0.1:4411/health"), case_id="c-rb")
+    assert "downtime=1" in case.sig
+    assert "`runbook:linger`" in mind.seen[1]                              # the brief offers it by name
+    ran = case.cures[0]["cure"]
+    assert ran["name"] == "linger" and ran["source"] == "runbook"
+    script = base64.b64decode(ran["command"].split()[1]).decode()
+    assert "enable-linger" in script and "disable-linger" in base64.b64decode(ran["undo"].split()[1]).decode()
+
+
+def test_a_runbook_fix_the_signature_did_not_offer_is_refused(tmp_path):
+    from pathlib import Path
+    from dbee.cures import Runbook
+    rb = Runbook.load(Path(__file__).resolve().parents[1] / "assets" / "runbook.jsonl")
+    pt = _Patient()
+    mind = _Script(("diagnose", {"cause": "x", "evidence": "RED: the drone runs as bee's own unit and bee does not linger"}),
+                   ("cure", {"command": "runbook:audio-server", "undo": "", "verify": "uptime", "why": "x"}),
+                   ("hand", {"step": "x", "finding": "x"}))
+    case = Doctor(pt, mind, home=tmp_path, runbook=rb).treat(Wake("health_miss", "http://127.0.0.1:4411/health"), case_id="c-rb2")
+    assert not case.cures and "not a runbook fix this case's signature offers" in case.refusals[-1]["why"]

@@ -221,14 +221,28 @@ class Runbook:
             sig = r.get("signature") or {}
             key = f"{sig.get('probe')}={sig.get('exit')}"
             if key in signature:
-                out.append(Cure(name=r["name"], command=r.get("command") or self._script(r.get("script")),
-                                undo=r.get("undo") or self._script(r.get("undo_script")),
+                out.append(Cure(name=r["name"], command=r.get("command") or f"runbook:{r['name']}",
+                                undo=r.get("undo") or f"runbook:{r['name']}",
                                 verify=r.get("verify_cmd") or "", why=r.get("does", ""), source="runbook",
                                 page=r.get("page", "")))
         return out
 
-    def _script(self, name: str | None) -> str:
-        if not name or not self.root:
-            return ""
-        p = self.root / "fixes" / name
-        return f"sh /var/lib/dbee/fixes/{name}" if p.exists() else ""
+    def expand(self, name: str) -> tuple[str, str] | None:
+        """A runbook fix and its undo as the lines the doctor runs: each script
+        carried in its own line, so any sh patient runs it as it stands. These are
+        the runbook's own words, trusted as the probes are; the mind names the fix
+        (`runbook:NAME`) and writes only the verify."""
+        import base64
+        for r in self.rows:
+            if r.get("name") != name or not self.root:
+                continue
+            if r.get("command"):
+                return r["command"], r.get("undo", "")
+            lines = []
+            for key in ("script", "undo_script"):
+                p = self.root / "fixes" / (r.get(key) or "")
+                if not r.get(key) or not p.exists():
+                    return None
+                lines.append(f"echo {base64.b64encode(p.read_bytes()).decode()} | base64 -d | sh")
+            return lines[0], lines[1]
+        return None
