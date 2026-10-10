@@ -77,6 +77,14 @@ COURT_TOOLS = [
 ]
 
 
+def release_tool(keys: list[str]) -> dict:
+    """`release`, its key held to the actions the court quarantined on this frame."""
+    return {"type": "function", "function": {
+        "name": "release", "description": "Let an action the court quarantined on this frame run again, once its cause is mended (the next crash quarantines it again).",
+        "parameters": {"type": "object", "properties": {"key": {"type": "string", "enum": keys}, "why": {"type": "string", "minLength": 8}},
+                       "required": ["key", "why"]}}}
+
+
 SNAP_MAX = 64 << 20          # a file larger than this is not copied before a cure (say so: it is not kept)
 WIN_PATH = re.compile(r"'([A-Za-z]:\\[^']+)'|\"([A-Za-z]:\\[^\"]+)\"|([A-Za-z]:\\[^\s'\";|,)]+)")
 
@@ -113,7 +121,8 @@ class Case:
     platform: str = ""
     turn_log: list = field(default_factory=list)         # one per call: the kit offered, its reply, timing
     held: bool = False                                   # this case holds its frame on the court
-    court_acts: list = field(default_factory=list)       # {act, why, at, taken, said}
+    court_acts: list = field(default_factory=list)       # {act, why, at, taken, said[, key]}
+    quarantined: list = field(default_factory=list)      # the court's quarantine on this frame, as the case opened
 
     def save(self, root: Path) -> Path:
         """Whole or not at all: written beside, then renamed over, after every turn,
@@ -195,6 +204,13 @@ class Doctor:
                                  won=False, finding="the fault came back after the close")
         self._probe_red = []
         first = self._first_look(wake)
+        if self.court is not None and (q := self.court.quarantined()):
+            # the court's quarantine on this frame is in view (and groundable): a key may be released
+            case.quarantined = q
+            first += ("\n\nThe court quarantined these actions, whose last run was on this frame "
+                      "(after a diagnosis, `release` lets one run again):\n" +
+                      "\n".join(f"{x['key']}: job {x.get('job', '?')} ({x.get('class', '')}) "
+                                 f"`{' '.join(x.get('cmd') or [])}`: {x.get('reason', '')}" for x in q))
         sig = [f"{wake.kind}={wake.what}"] + self._probe_red      # a red probe is part of the fault's signature
         case.sig = sig
         precedents = self.casebook.precedents(sig)
@@ -285,6 +301,9 @@ class Doctor:
                                 case.close_blocked = False
                     elif name in ("hold", "return") and self.court is not None:
                         out = self._court_word(case, name, str(a.get("why") or "").strip())
+                    elif name == "release" and self.court is not None:
+                        out = ("refused: name the mechanism first (`diagnose`), then release." if phase != "treat" else
+                               self._release(case, str(a.get("key") or "").strip(), str(a.get("why") or "").strip()))
                     elif name == "hand":
                         case.hand = {"step": a.get("step", ""), "finding": a.get("finding", "")}
                         case.end, case.finding = "handed", a.get("finding", "")
@@ -342,6 +361,22 @@ class Doctor:
                 "`return` it once it is mended (a close returns it)." if case.held else
                 f"returned {self.court.frame} to the fleet's work.")
 
+    def _release(self, case: Case, key: str, why: str) -> str:
+        """An action the court quarantined on this frame, let run again."""
+        keys = [q["key"] for q in case.quarantined]
+        if key not in keys:
+            return (f"refused: {key or 'no key'} is not an action the court quarantined on this frame "
+                    f"(its keys: {', '.join(keys) or 'none left'})")
+        if len(why) < 8:
+            return "refused: a release says why the action may run again, in a line"
+        taken, said = self.court.release(key, case.id, why)
+        case.court_acts.append({"act": "release", "key": key, "why": why, "at": time.time(), "taken": taken, "said": said})
+        if not taken:
+            return f"refused: {said}"
+        case.quarantined = [q for q in case.quarantined if q["key"] != key]
+        self.say(f"[{case.id}] released {key}: {why[:160]}")
+        return f"released {key}: the court lets it run again; the next crash quarantines it again."
+
     def _still_held(self, case: Case) -> None:
         """A hand-off leaves the frame held: the person who takes it returns it."""
         if case.held and case.hand is not None:
@@ -361,6 +396,8 @@ class Doctor:
             tools = [t for t in tools if t["function"]["name"] != "close"]
         if self.court is not None:
             tools = tools + [t for t in COURT_TOOLS if t["function"]["name"] == ("return" if case.held else "hold")]
+            if phase == "treat" and case.quarantined:
+                tools = tools + [release_tool([q["key"] for q in case.quarantined])]
         effort = self.effort.get(phase, "")
         r = self.mind.chat(msgs, tools=tools, max_tokens=self.max_tokens, effort=effort)
         case.turns += 1
@@ -836,6 +873,8 @@ def case_record(c: dict) -> dict:
     won = c.get("end") == "closed" and bool(cures) and cures[-1].get("verify_code") == 0
     offered = {n for t in c.get("turn_log") or [] for n in t.get("tools") or []}
     tools = TOOLS + [t for t in COURT_TOOLS if t["function"]["name"] in offered]
+    if "release" in offered:
+        tools.append(release_tool([q.get("key") for q in c.get("quarantined") or []]))
     return {"messages": c.get("transcript") or [], "tools": tools, "turns": c.get("turn_log") or [],
             "meta": {"case": c.get("id"), "mind": c.get("mind", ""), "platform": c.get("platform", ""),
                      "patient": c.get("patient"), "wake": c.get("wake"), "end": c.get("end"),
