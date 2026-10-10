@@ -24,6 +24,7 @@ from pathlib import Path
 
 from . import looks
 from .cures import Cure, Runbook, check_cure
+from .minds import NoSeat
 from .casebook import Casebook
 from .watch import Wake
 
@@ -184,7 +185,12 @@ class Doctor:
                     case.end, case.finding = "handed", case.hand["finding"]
                     self.say(f"[{case.id}] handed: {case.hand['step']}")
                     break
-                reply = self._ask(case, msgs, phase)
+                try:
+                    reply = self._ask(case, msgs, phase)
+                except NoSeat as e:
+                    # the Hive is busy: the case waits for a seat until its own clock, never ends on it
+                    self.say(f"[{case.id}] still waiting for a seat: {str(e)[:160]}")
+                    continue
                 msgs.append(self._assistant(reply))
                 if not reply.tool_calls:
                     # words with no call: an act is asked for, every time

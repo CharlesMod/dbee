@@ -129,3 +129,18 @@ def test_every_case_has_a_report_a_person_reads_in_a_minute(tmp_path):
                  "undo: `chmod -x /usr/sbin/cron`", "verify passed", "1 look", "gemma-4-26b", "c-2.json"):
         assert want in md, want
     assert len(md.splitlines()) < 40
+
+
+def test_a_busy_hive_makes_the_case_wait_for_a_seat_not_end(tmp_path):
+    # seen live: 31 cases on 12 seats; seven ended "no seat in 600s" though the case had hours left
+    from dbee.minds import NoSeat
+
+    class _Busy(_Script):
+        def chat(self, msgs, tools=None, max_tokens=0, effort=""):
+            if self.n == 1 and not getattr(self, "waited", 0):
+                self.waited = 1
+                raise NoSeat("no seat for qwen3.5-4b-iq4xs in 600s: every slot busy")
+            return super().chat(msgs, tools, max_tokens, effort)
+    mind = _Busy(("look", {"cmd": "ls -lL /usr/sbin/cron"}), READ, HAND)
+    case = Doctor(_Patient(), mind, home=tmp_path).treat(Wake("unit_failed", "cron.service"), case_id="c-5")
+    assert case.end == "handed" and case.diagnosis                 # it waited, then went on

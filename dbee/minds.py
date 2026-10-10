@@ -198,6 +198,11 @@ class OpenAIMind:
                 delay = min(delay * 2, 30.0)
 
 
+class NoSeat(RuntimeError):
+    """The Hive answered, but no seat came for the model within the call's wait: the
+    Hive is busy, not broken. A case keeps asking until its own clock runs out."""
+
+
 class HiveMind:
     """A seat on the hive, by model name, for one call at a time."""
 
@@ -229,7 +234,7 @@ class HiveMind:
                 self._said = time.time()
                 self.say(f"   waiting for a seat on {self.model}: {(body.get('detail') or body.get('why') or '')[:120]}")
             time.sleep(min(5.0, float(body.get("retry_after_s") or body.get("retry_s") or 2)))
-        raise RuntimeError(f"no seat for {self.model} in {self.wait_s:.0f}s: {last.get('detail') or last.get('why') or last}")
+        raise NoSeat(f"no seat for {self.model} in {self.wait_s:.0f}s: {last.get('detail') or last.get('why') or last}")
 
     def chat(self, messages: list[dict], tools: list[dict] | None = None,
              *, max_tokens: int = 1024, temperature: float = 0.0, effort: str = "") -> Reply:
