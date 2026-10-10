@@ -84,6 +84,39 @@ def check_cure(cmd: str, never: list | None = None, verbs: set | None = None, fa
         for bad in FORBIDDEN_FOR.get(verb, ()):
             if bad in toks[1:]:
                 return f"`{verb} {bad}` is not allowed in a cure (do it file by file, or SIGTERM first)"
+        if (w := _runs_anything(verb, toks[1:], op)):
+            return w
+    return ""
+
+
+FIXES = "/var/lib/dbee/fixes/"
+SHELLS = {"sh", "bash", "dash", "zsh", "ksh", "ash"}
+
+
+def _runs_anything(verb: str, args: list[str], op: str) -> str:
+    """Why this command would run a command the shape never saw, or ''. Every rule
+    above reads the cure's own words; a shell, an interpreter or a verb that execs
+    could carry any words past them (`sh -c "rm -rf /"`, `echo … | base64 -d | sh`)."""
+    if verb in SHELLS:
+        if op == "|" or not args or args[0].startswith("-") or not args[0].startswith(FIXES) or ".." in args[0]:
+            return f"`{verb}` runs only a runbook fix (`sh {FIXES}NAME`); write the commands themselves"
+    elif verb.startswith("python"):
+        if args[:2] != ["-m", "pip"]:
+            return "`python3` only as `python3 -m pip`; write the commands themselves"
+    elif verb == "systemd-run":
+        return "`systemd-run` starts any command; write the command itself"
+    elif verb == "crontab" and args != ["-l"]:
+        return "`crontab` installs commands the shape never sees; edit the file under /etc/cron.d instead"
+    elif verb == "ip" and "exec" in args:
+        return "`ip … exec` runs any command; write the command itself"
+    elif verb == "tar" and any(a.startswith(("--to-command", "--checkpoint-action", "--use-compress-program", "--info-script", "--new-volume-script")) or a == "-I" or a == "-F" for a in args):
+        return "`tar` with a program to run is not a cure"
+    elif verb in ("awk", "gawk", "mawk") and any(re.search(r"\bsystem\s*\(|\|\s*getline|\|\s*\"|print[^;]*\|", a) for a in args):
+        return "`awk` that runs a command is not a cure"
+    elif verb == "sed" and any(re.search(r"(?:^|[;{}\s\d$/])e(?:\s|$|;)|^s(.).*\1.*\1[gpiIm0-9]*e[gpiIm0-9]*$", a) for a in args if not a.startswith("-")):
+        return "`sed`'s `e` runs a command; it is not a cure"
+    elif verb == "find" and any(a in ("-fprint", "-fprintf", "-fls") for a in args):
+        return "`find` writing files is not a cure"
     return ""
 
 
