@@ -137,9 +137,19 @@ def main(argv=None) -> int:
             print(f"{jobs} patients at once would exhaust this user's kernel keyring quota; running {room} at once")
             jobs = room
         if jobs > 1:
+            import threading
             from concurrent.futures import ThreadPoolExecutor
+            # a scenario on this machine's own user (macos-user, windows-user) shares one patient
+            # and its labels with every other such scenario: those run one at a time
+            mine = threading.Lock()
+
+            def one(sc):
+                if not sc.get("patient", "").endswith("-user"):
+                    return sim.run(sc, m, runs_dir=Path(a.runs), keep=a.keep)
+                with mine:
+                    return sim.run(sc, m, runs_dir=Path(a.runs), keep=a.keep)
             with ThreadPoolExecutor(max_workers=jobs) as pool:
-                results = list(pool.map(lambda sc: sim.run(sc, m, runs_dir=Path(a.runs), keep=a.keep), picked))
+                results = list(pool.map(one, picked))
         else:
             results = [sim.run(sc, m, runs_dir=Path(a.runs), keep=a.keep) for sc in picked]
         # a case ends right when it is fixed and closed, or handed to a person where only one can fix it
